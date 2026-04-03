@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "german-credit-rai"
+version = "0.2.0"
+description = "Responsible AI pipeline for the UCI German Credit dataset"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "matplotlib>=3.8",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "requests>=2.32",
+]
+
+[project.optional-dependencies]
+notebook = [
+  "jupyter>=1.0",
+  "ipykernel>=6.0",
+]
+
+[project.scripts]
+german-credit-rai = "german_credit_rai.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["german_credit_rai*"]

@@ -1,0 +1,313 @@
+{
+  "config": {
+    "data_path": "data\\raw\\german.data",
+    "output_dir": "outputs\\final_run_age",
+    "download_if_missing": false,
+    "sensitive_attribute": "age",
+    "age_threshold": 25,
+    "random_seed": 42,
+    "train_ratio": 0.6,
+    "val_ratio": 0.2,
+    "test_ratio": 0.2,
+    "learning_rate": 0.03,
+    "epochs": 3500,
+    "l2": 0.01,
+    "noise_scale": 0.2,
+    "category_swap_prob": 0.1,
+    "permutation_repeats": 10,
+    "postprocessing_criterion": "demographic_parity"
+  },
+  "dataset": {
+    "rows": 1000,
+    "positive_rate_default": 0.3,
+    "sensitive_attribute": "age",
+    "privileged_group": "older",
+    "split_sizes": {
+      "train": 600,
+      "val": 200,
+      "test": 200
+    },
+    "sensitive_distribution_test": {
+      "older": 0.8,
+      "younger": 0.2
+    }
+  },
+  "scenarios": {
+    "clean_test": {
+      "baseline": {
+        "threshold": 0.26,
+        "performance": {
+          "accuracy": 0.695,
+          "precision": 0.4945054945054945,
+          "recall": 0.75,
+          "specificity": 0.6714285714285714,
+          "f1": 0.5960264900662252,
+          "balanced_accuracy": 0.7107142857142856,
+          "roc_auc": 0.8010714285714285,
+          "log_loss": 0.4808611627116995,
+          "positive_prediction_rate": 0.455,
+          "default_rate": 0.3
+        },
+        "fairness": {
+          "privileged_group": "older",
+          "comparison_group": "younger",
+          "group_metrics": {
+            "older": {
+              "count": 160.0,
+              "base_rate": 0.26875,
+              "selection_rate": 0.4375,
+              "tpr": 0.7906976744186046,
+              "fpr": 0.3076923076923077,
+              "precision": 0.4857142857142857
+            },
+            "younger": {
+              "count": 40.0,
+              "base_rate": 0.425,
+              "selection_rate": 0.525,
+              "tpr": 0.6470588235294118,
+              "fpr": 0.43478260869565216,
+              "precision": 0.5238095238095238
+            }
+          },
+          "demographic_parity_difference": 0.08750000000000002,
+          "abs_demographic_parity_difference": 0.08750000000000002,
+          "demographic_parity_ratio": 1.2,
+          "equal_opportunity_difference": -0.14363885088919282,
+          "abs_equal_opportunity_difference": 0.14363885088919282,
+          "average_odds_difference": -0.008274274942924181,
+          "abs_average_odds_difference": 0.008274274942924181
+        }
+      },
+      "fair_reweighing": {
+        "threshold": 0.25,
+        "performance": {
+          "accuracy": 0.7,
+          "precision": 0.5,
+          "recall": 0.75,
+          "specificity": 0.6785714285714286,
+          "f1": 0.6,
+          "balanced_accuracy": 0.7142857142857143,
+          "roc_auc": 0.7942857142857143,
+          "log_loss": 0.488915031547005,
+          "positive_prediction_rate": 0.45,
+          "default_rate": 0.3
+        },
+        "fairness": {
+          "privileged_group": "older",
+          "comparison_group": "younger",
+          "group_metrics": {
+            "older": {
+              "count": 160.0,
+              "base_rate": 0.26875,
+              "selection_rate": 0.4375,
+              "tpr": 0.813953488372093,
+              "fpr": 0.29914529914529914,
+              "precision": 0.5
+            },
+            "younger": {
+              "count": 40.0,
+              "base_rate": 0.425,
+              "selection_rate": 0.5,
+              "tpr": 0.5882352941176471,
+              "fpr": 0.43478260869565216,
+              "precision": 0.5
+            }
+          },
+          "demographic_parity_difference": 0.0625,
+          "abs_demographic_parity_difference": 0.0625,
+          "demographic_parity_ratio": 1.1428571428571428,
+          "equal_opportunity_difference": -0.22571819425444595,
+          "abs_equal_opportunity_difference": 0.22571819425444595,
+          "average_odds_difference": -0.04504044235204646,
+          "abs_average_odds_difference": 0.04504044235204646
+        }
+      },
+      "fair_postprocessing": {
+        "threshold": 0.2975,
+        "group_thresholds": {
+          "older": 0.25499999999999995,
+          "younger": 0.33999999999999997
+        },
+        "performance": {
+          "accuracy": 0.695,
+          "precision": 0.4943820224719101,
+          "recall": 0.7333333333333333,
+          "specificity": 0.6785714285714286,
+          "f1": 0.5906040268456376,
+          "balanced_accuracy": 0.7059523809523809,
+          "roc_auc": 0.8010714285714285,
+          "log_loss": 0.4808611627116995,
+          "positive_prediction_rate": 0.445,
+          "default_rate": 0.3
+        },
+        "fairness": {
+          "privileged_group": "older",
+          "comparison_group": "younger",
+          "group_metrics": {
+            "older": {
+              "count": 160.0,
+              "base_rate": 0.26875,
+              "selection_rate": 0.4375,
+              "tpr": 0.7906976744186046,
+              "fpr": 0.3076923076923077,
+              "precision": 0.4857142857142857
+            },
+            "younger": {
+              "count": 40.0,
+              "base_rate": 0.425,
+              "selection_rate": 0.475,
+              "tpr": 0.5882352941176471,
+              "fpr": 0.391304347826087,
+              "precision": 0.5263157894736842
+            }
+          },
+          "demographic_parity_difference": 0.03749999999999998,
+          "abs_demographic_parity_difference": 0.03749999999999998,
+          "demographic_parity_ratio": 1.0857142857142856,
+          "equal_opportunity_difference": -0.20246238030095753,
+          "abs_equal_opportunity_difference": 0.20246238030095753,
+          "average_odds_difference": -0.059425170083589135,
+          "abs_average_odds_difference": 0.059425170083589135
+        }
+      }
+    },
+    "perturbed_test": {
+      "baseline": {
+        "threshold": 0.26,
+        "performance": {
+          "accuracy": 0.675,
+          "precision": 0.4731182795698925,
+          "recall": 0.7333333333333333,
+          "specificity": 0.65,
+          "f1": 0.5751633986928104,
+          "balanced_accuracy": 0.6916666666666667,
+          "roc_auc": 0.7579761904761905,
+          "log_loss": 0.5152824082243542,
+          "positive_prediction_rate": 0.465,
+          "default_rate": 0.3
+        },
+        "fairness": {
+          "privileged_group": "older",
+          "comparison_group": "younger",
+          "group_metrics": {
+            "older": {
+              "count": 160.0,
+              "base_rate": 0.26875,
+              "selection_rate": 0.44375,
+              "tpr": 0.7674418604651163,
+              "fpr": 0.3247863247863248,
+              "precision": 0.4647887323943662
+            },
+            "younger": {
+              "count": 40.0,
+              "base_rate": 0.425,
+              "selection_rate": 0.55,
+              "tpr": 0.6470588235294118,
+              "fpr": 0.4782608695652174,
+              "precision": 0.5
+            }
+          },
+          "demographic_parity_difference": 0.10625000000000007,
+          "abs_demographic_parity_difference": 0.10625000000000007,
+          "demographic_parity_ratio": 1.23943661971831,
+          "equal_opportunity_difference": -0.12038303693570451,
+          "abs_equal_opportunity_difference": 0.12038303693570451,
+          "average_odds_difference": 0.016545753921594047,
+          "abs_average_odds_difference": 0.016545753921594047
+        }
+      },
+      "fair_reweighing": {
+        "threshold": 0.25,
+        "performance": {
+          "accuracy": 0.675,
+          "precision": 0.4742268041237113,
+          "recall": 0.7666666666666667,
+          "specificity": 0.6357142857142857,
+          "f1": 0.5859872611464968,
+          "balanced_accuracy": 0.7011904761904761,
+          "roc_auc": 0.7548809523809524,
+          "log_loss": 0.5235791318016312,
+          "positive_prediction_rate": 0.485,
+          "default_rate": 0.3
+        },
+        "fairness": {
+          "privileged_group": "older",
+          "comparison_group": "younger",
+          "group_metrics": {
+            "older": {
+              "count": 160.0,
+              "base_rate": 0.26875,
+              "selection_rate": 0.45625,
+              "tpr": 0.7906976744186046,
+              "fpr": 0.3333333333333333,
+              "precision": 0.4657534246575342
+            },
+            "younger": {
+              "count": 40.0,
+              "base_rate": 0.425,
+              "selection_rate": 0.6,
+              "tpr": 0.7058823529411765,
+              "fpr": 0.5217391304347826,
+              "precision": 0.5
+            }
+          },
+          "demographic_parity_difference": 0.14375,
+          "abs_demographic_parity_difference": 0.14375,
+          "demographic_parity_ratio": 1.3150684931506849,
+          "equal_opportunity_difference": -0.0848153214774281,
+          "abs_equal_opportunity_difference": 0.0848153214774281,
+          "average_odds_difference": 0.05179523781201059,
+          "abs_average_odds_difference": 0.05179523781201059
+        }
+      },
+      "fair_postprocessing": {
+        "threshold": 0.2975,
+        "group_thresholds": {
+          "older": 0.25499999999999995,
+          "younger": 0.33999999999999997
+        },
+        "performance": {
+          "accuracy": 0.665,
+          "precision": 0.4606741573033708,
+          "recall": 0.6833333333333333,
+          "specificity": 0.6571428571428571,
+          "f1": 0.5503355704697988,
+          "balanced_accuracy": 0.6702380952380953,
+          "roc_auc": 0.7579761904761905,
+          "log_loss": 0.5152824082243542,
+          "positive_prediction_rate": 0.445,
+          "default_rate": 0.3
+        },
+        "fairness": {
+          "privileged_group": "older",
+          "comparison_group": "younger",
+          "group_metrics": {
+            "older": {
+              "count": 160.0,
+              "base_rate": 0.26875,
+              "selection_rate": 0.44375,
+              "tpr": 0.7674418604651163,
+              "fpr": 0.3247863247863248,
+              "precision": 0.4647887323943662
+            },
+            "younger": {
+              "count": 40.0,
+              "base_rate": 0.425,
+              "selection_rate": 0.45,
+              "tpr": 0.47058823529411764,
+              "fpr": 0.43478260869565216,
+              "precision": 0.4444444444444444
+            }
+          },
+          "demographic_parity_difference": 0.006250000000000033,
+          "abs_demographic_parity_difference": 0.006250000000000033,
+          "demographic_parity_ratio": 1.0140845070422535,
+          "equal_opportunity_difference": -0.29685362517099867,
+          "abs_equal_opportunity_difference": 0.29685362517099867,
+          "average_odds_difference": -0.09342867063083565,
+          "abs_average_odds_difference": 0.09342867063083565
+        }
+      }
+    }
+  }
+}
