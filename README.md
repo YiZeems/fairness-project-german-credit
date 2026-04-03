@@ -397,29 +397,141 @@ projet/
 
 ## 11. Installation and usage
 
-### Install
+> **Python version required: 3.11.x** (exact — enforced by `uv.lock` and `.python-version`)
+
+This section covers how to get an identical working environment on **macOS**, **Linux**, and **Windows**.  
+Two paths are offered: **uv** (fast, handles Python version automatically) and **pip** (standard, requires Python 3.11 already installed).
+
+---
+
+### Option A — uv (recommended, all platforms)
+
+`uv` is a fast Python package manager that installs the correct Python version automatically.
+
+#### macOS / Linux
 
 ```bash
-# With uv (recommended)
+# 1. Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Restart your shell or run:
+source $HOME/.cargo/env
+
+# 2. Clone the repo
+git clone https://github.com/YiZeems/fairness-project-german-credit.git
+cd fairness-project-german-credit
+
+# 3. Create the environment and install all dependencies
+#    uv reads .python-version (3.11) and uv.lock automatically
 uv sync
 
-# Or with pip
+# 4. (Optional) add Jupyter support
+uv sync --extra notebook
+```
+
+#### Windows (PowerShell)
+
+```powershell
+# 1. Install uv
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Restart PowerShell, then:
+
+# 2. Clone the repo
+git clone https://github.com/YiZeems/fairness-project-german-credit.git
+cd fairness-project-german-credit
+
+# 3. Create the environment
+uv sync
+
+# 4. (Optional) add Jupyter support
+uv sync --extra notebook
+```
+
+---
+
+### Option B — pip with Python 3.11
+
+Use this if you already have Python 3.11 installed and prefer the standard toolchain.
+
+#### macOS / Linux — pip
+
+```bash
+# Verify you have Python 3.11
+python3.11 --version   # must print 3.11.x
+
+# Clone the repo
+git clone https://github.com/YiZeems/fairness-project-german-credit.git
+cd fairness-project-german-credit
+
+# Create and activate a virtual environment
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# Install the package in editable mode
 pip install -e .
 
-# With notebook support
+# (Optional) add Jupyter support
 pip install -e ".[notebook]"
 ```
 
-### Run the full pipeline
+#### Windows — pip (PowerShell or CMD)
+
+```powershell
+# Verify you have Python 3.11
+python --version   # must print 3.11.x
+
+# Clone the repo
+git clone https://github.com/YiZeems/fairness-project-german-credit.git
+cd fairness-project-german-credit
+
+# Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install the package in editable mode
+pip install -e .
+
+# (Optional) add Jupyter support
+pip install -e ".[notebook]"
+```
+
+> **Where to get Python 3.11 on Windows:**  
+> Download the installer from [python.org/downloads](https://www.python.org/downloads/release/python-3119/) and tick *"Add python.exe to PATH"* during installation.
+
+---
+
+### Verify the installation
+
+After either option, confirm everything works (same command on all platforms):
 
 ```bash
-# Gender-based fairness analysis (primary)
+# With uv
+uv run python -m german_credit_rai --help
+
+# With pip (venv activated)
+python -m german_credit_rai --help
+```
+
+Expected output starts with `usage: german_credit_rai [-h] {run,show} ...`
+
+---
+
+### Run the full pipeline
+
+The commands below use `python -m german_credit_rai`. If you used `uv`, prefix them with `uv run`:
+
+```bash
+# macOS / Linux — gender-based fairness analysis
 python -m german_credit_rai run \
   --download-if-missing \
   --sensitive-attribute gender \
   --output-dir outputs/run_gender
 
-# Age-based fairness analysis
+# Windows (PowerShell) — same command, no backslash continuation needed
+python -m german_credit_rai run --download-if-missing --sensitive-attribute gender --output-dir outputs/run_gender
+
+# Age-based fairness analysis (all platforms)
 python -m german_credit_rai run \
   --download-if-missing \
   --sensitive-attribute age \
@@ -429,6 +541,8 @@ python -m german_credit_rai run \
 # Display results from a previous run
 python -m german_credit_rai show outputs/run_gender/metrics.json
 ```
+
+---
 
 ### All CLI options
 
@@ -447,11 +561,19 @@ python -m german_credit_rai show outputs/run_gender/metrics.json
 | `--output-dir` | `outputs/run` | Directory for all output files |
 | `--log-level` | `INFO` | Logging verbosity |
 
+---
+
 ### Interactive notebook
 
 ```bash
+# With uv
+uv run jupyter notebook notebook.ipynb
+
+# With pip (venv activated)
 jupyter notebook notebook.ipynb
 ```
+
+> **Windows note:** if the browser does not open automatically, copy the URL printed in the terminal (e.g. `http://localhost:8888/?token=...`) and paste it into your browser.
 
 The notebook follows the same structure as the CLI pipeline and adds visual exploration of the data distribution, training curves, and per-group fairness metrics.
 
