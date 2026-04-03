@@ -22,6 +22,7 @@
 12. [Outputs reference](#12-outputs-reference)
 13. [Dependencies](#13-dependencies)
 14. [Known limitations](#14-known-limitations)
+15. [Formula variable glossary](#15-formula-variable-glossary)
 
 ---
 
@@ -146,20 +147,25 @@ The default classification threshold is chosen to maximize **Youden's index** (b
 
 ### Definitions
 
-Let S be the sensitive attribute (e.g., gender), Ŷ the model's prediction, and Y the true label.
+Let:
+- `S` be the sensitive attribute (e.g., gender)
+- `Y` the true label (`1` = default, `0` = non-default)
+- `Ŷ` the binary model decision after thresholding
+
+In this project, `Ŷ = 1` means **"predicted default"** (risk alert), not "credit approved".
 
 **Demographic Parity Difference (DP):**
 ```
 ΔDP = |P(Ŷ=1 | S=comparison) − P(Ŷ=1 | S=privileged)|
 ```
-Measures whether both groups are assigned positive outcomes at equal rates, regardless of true labels.
+Measures whether both groups receive the same **predicted-default rate**, regardless of true labels.
 
 **Equal Opportunity Difference (EO):**
 ```
 ΔEO = |TPR_comparison − TPR_privileged|
      = |P(Ŷ=1 | Y=1, S=comparison) − P(Ŷ=1 | Y=1, S=privileged)|
 ```
-Measures whether truly creditworthy individuals from both groups are equally likely to receive credit.
+Measures whether true defaulters (`Y=1`) are detected at similar rates across groups.
 
 **Average Odds Difference (AOD):**
 ```
@@ -168,7 +174,7 @@ Measures whether truly creditworthy individuals from both groups are equally lik
 Combines both false positive and true positive rate differences — the strictest of the three metrics.
 
 **Why Equal Opportunity over Demographic Parity?**  
-In a credit context, EO is often the more ethically relevant criterion: we want individuals who are genuinely creditworthy to have equal chances of approval regardless of their group. DP requires equal approval rates even if group base rates differ, which can conflict with accuracy.
+With the convention used here (`Ŷ=1` = predicted default), EO compares detection parity among true defaulters, while DP enforces equal alert rates across groups regardless of base rates. As a result, optimizing DP can degrade predictive validity when base rates differ.
 
 ### Method 1 — Reweighing (pre-processing)
 
@@ -266,11 +272,11 @@ If both methods agree on the top features, that convergence is strong evidence f
 
 | Feature type | Perturbation | Parameters |
 |---|---|---|
-| Numeric | Add Gaussian noise: x̃ = x + ε, ε ~ N(0, σ²·std(x)²) | σ = 0.2 |
+| Numeric | Add Gaussian noise: x̃_j = x_j + ε_j, ε_j ~ N(0, σ_j²), σ_j = 0.2·std_train(x_j) | per-feature σ_j |
 | Categorical | Replace with random training-set value at probability p | p = 0.1 |
 
 **Design choices:**
-- σ = 0.2 represents ~20 % of each feature's standard deviation — realistic measurement noise
+- numeric noise is scaled by each feature's train-set variability (`σ_j = 0.2·std_train(x_j)`) to keep perturbations comparable across units
 - p = 0.1 models ~10 % category misclassification — plausible data entry error rate
 - The same perturbation is applied identically to all three models so results are directly comparable
 
@@ -626,6 +632,75 @@ Python ≥ 3.11 required. **No scikit-learn dependency** by design.
 4. **Post-processing overfitting on small groups** — the validation set contains ~40 female examples; calibrated thresholds are noisy and do not generalize (observed in results)
 5. **Fairness–accuracy impossibility** — it is mathematically impossible to satisfy both demographic parity and equal opportunity simultaneously unless base rates are equal; the project does not attempt joint optimization
 6. **Synthetic perturbations** — the robustness evaluation uses simple i.i.d. noise; real distribution shifts (covariate shift, label shift, adversarial attacks) may produce qualitatively different effects
+
+---
+
+## 15. Formula variable glossary
+
+This section lists the variables used in the main formulas (Notebooks 2 to 5), with their meaning and practical role.
+
+### 15.1 Baseline model (Notebook 2)
+
+| Symbol | Meaning | Why it matters |
+|---|---|---|
+| `x` | Feature vector of one applicant | Input used to produce a risk score |
+| `X` | Feature matrix for all samples | Batch training and prediction |
+| `y` | True label (`1` = default, `0` = non-default) | Supervised learning target |
+| `\hat{p}` | Predicted probability of default | Core risk score used for thresholding |
+| `\sigma(z)` | Sigmoid function | Converts linear score to probability |
+| `w` | Model coefficients | Encodes feature effects on log-odds |
+| `b` | Intercept (bias term) | Global offset of model predictions |
+| `\mathcal{L}(w,b)` | BCE + L2 objective | Optimization criterion during training |
+| `\alpha_i` | Sample weight for training instance `i` | Allows fairness reweighting during training |
+| `\lambda` | L2 regularization strength | Controls overfitting on small data |
+| `n` | Number of samples | Normalizes loss and gradients |
+| `t` | Decision threshold | Converts probabilities into class predictions |
+| `TP, FP, TN, FN` | Confusion matrix components | Basis of classification metrics |
+| `TPR, TNR` | Sensitivity / specificity | Used in Balanced Accuracy |
+| `AUC` | Area under ROC curve | Threshold-independent ranking quality |
+| `ECE` | Expected Calibration Error | Probability reliability measure |
+
+### 15.2 Fairness metrics and mitigation (Notebook 3)
+
+| Symbol | Meaning | Why it matters |
+|---|---|---|
+| `S` | Sensitive attribute (gender or age group) | Group fairness is measured conditionally on `S` |
+| `s_p` | Privileged group | Reference group for fairness gaps |
+| `s_c` | Comparison group | Group compared against privileged group |
+| `\hat{Y}` | Binary model decision | Used by DP/EO fairness formulas |
+| `\Delta_{DP}` | Demographic parity gap | Difference in positive prediction rates |
+| `\Delta_{EO}` | Equal opportunity gap | Difference in TPR across groups |
+| `\text{Ratio}_{DP}` | Selection-rate ratio | Relative parity indicator (e.g. 80% rule context) |
+| `w_i` (reweighing) | Fairness correction weight for sample `i` | Rebalances group-label representation in training |
+| `P(S), P(Y), P(S,Y)` | Marginal and joint probabilities | Used to compute reweighing weights |
+| `t_s` | Group-specific threshold | Post-processing lever to target fairness criteria |
+
+### 15.3 Interpretability (Notebook 4)
+
+| Symbol | Meaning | Why it matters |
+|---|---|---|
+| `f(x)` | Model output (log-odds) | Quantity explained by SHAP |
+| `\phi_i(x)` | SHAP contribution of feature `i` | Local explanation of each feature effect |
+| `\phi_0` | Baseline value (expected output) | Reference point in additive SHAP decomposition |
+| `d` | Number of features | Dimension in SHAP sum decomposition |
+| `\mathbb{E}_{train}[x_i]` | Train-set mean of feature `i` | Reference used in exact linear SHAP |
+| `k` (dummy indices) | One-hot columns belonging to one categorical feature | Needed to aggregate SHAP back to original features |
+| `Imp(j)` | Permutation importance of feature `j` | Measures AUC drop when feature signal is broken |
+| `R` | Number of permutation repeats | Stabilizes importance estimates |
+| `\tilde{X}_{j,r}` | Test set with feature `j` shuffled at repeat `r` | Counterfactual dataset for permutation importance |
+| `AUC_{orig}` | Baseline AUC before permutation | Reference for computing performance drop |
+
+### 15.4 Robustness and calibration (Notebook 5)
+
+| Symbol | Meaning | Why it matters |
+|---|---|---|
+| `\tilde{x}_j` | Perturbed value of numeric feature `j` | Simulates noisy measurements in production |
+| `\varepsilon_j` | Additive Gaussian noise term | Controls stochastic perturbation magnitude |
+| `\sigma_j` | Noise scale (`0.2 * std_train`) | Anchors perturbation to feature variability |
+| `p` | Categorical swap probability (default `0.1`) | Simulates category miscoding |
+| `scores_{clean}, scores_{pert}` | Predictions before/after perturbation | Used to assess score stability |
+| `\Delta` | Perturbed minus clean metric | Quantifies robustness drift |
+| `ECE` (post-perturbation) | Calibration error under noise | Checks probability reliability under degraded inputs |
 
 ---
 
