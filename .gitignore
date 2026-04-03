@@ -36,3 +36,4 @@ outputs/notebook_run/
 # OS
 .DS_Store
 Thumbs.db
+notebook_bak.ipynb
