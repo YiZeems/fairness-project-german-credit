@@ -1,0 +1,686 @@
+\documentclass[aspectratio=169, 11pt]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows.meta, positioning, calc}
+\usepackage{multicol}
+
+% ── Couleurs ─────────────────────────────────────────────────────────────────
+\definecolor{accent}{HTML}{2196F3}
+\definecolor{fair}{HTML}{4CAF50}
+\definecolor{alertc}{HTML}{d9534f}
+\definecolor{neutral}{HTML}{FF9800}
+
+% ── Titre ────────────────────────────────────────────────────────────────────
+\title{Parcours p\'edagogique : IA Responsable}
+\subtitle{Du jeu de donn\'ees aux conclusions --- pas \`a pas}
+\author{IA708 --- T\'el\'ecom Paris}
+\date{2026}
+
+\begin{document}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Plan}
+\tableofcontents
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Vue d'ensemble}
+
+\begin{frame}{Le parcours en 11 \'etapes}
+\centering
+\begin{tikzpicture}[
+    node distance=0.35cm and 0.8cm,
+    block/.style={rectangle, draw, rounded corners=3pt, minimum height=0.75cm,
+                  minimum width=2cm, text centered, font=\scriptsize,
+                  text width=1.9cm, align=center},
+    question/.style={font=\tiny\itshape, text=accent!80!black, text width=2.5cm, align=center},
+    arrow/.style={-Stealth, thick, accent!70}
+]
+\node[block, fill=accent!12] (data) {1.~Donn\'ees\newline 1000 lignes};
+\node[block, fill=accent!12, right=of data] (explore) {2.~Exploration\newline biais?};
+\node[block, fill=accent!12, right=of explore] (prep) {3.~Pr\'eparation\newline split, encoding};
+\node[block, fill=accent!12, right=of prep] (model) {4.~Mod\`ele\newline r\'eg.\ logist.};
+
+\node[block, fill=fair!12, below=0.9cm of data] (metrics) {5.~M\'etriques\newline perf + \'equit\'e};
+\node[block, fill=fair!12, right=of metrics] (rw) {6.~Reweighing\newline pr\'e-trait.};
+\node[block, fill=fair!12, right=of rw] (pp) {7.~Seuils/grp\newline post-trait.};
+\node[block, fill=fair!12, right=of pp] (comp) {8.~Comparer\newline 4 configs};
+
+\node[block, fill=neutral!12, below=0.9cm of metrics] (shap) {9.~SHAP\newline interpr\'et.};
+\node[block, fill=neutral!12, right=of shap] (rob) {10.~Robustesse\newline perturbation};
+\node[block, fill=alertc!12, right=of rob] (ccl) {11.~Conclusion\newline le\c{c}ons};
+
+\draw[arrow] (data) -- (explore);
+\draw[arrow] (explore) -- (prep);
+\draw[arrow] (prep) -- (model);
+\draw[arrow] (model.south) -- ++(0,-0.25) -| (metrics.north);
+\draw[arrow] (metrics) -- (rw);
+\draw[arrow] (rw) -- (pp);
+\draw[arrow] (pp) -- (comp);
+\draw[arrow] (comp.south) -- ++(0,-0.25) -| (shap.north);
+\draw[arrow] (shap) -- (rob);
+\draw[arrow] (rob) -- (ccl);
+
+\node[question, above=0.1cm of explore] {Y a-t-il des biais ?};
+\node[question, above=0.1cm of model] {Quelles perf.\ ?};
+\node[question, below=0.1cm of rw] {Peut-on corriger ?};
+\node[question, below=0.1cm of comp] {Quel compromis ?};
+\node[question, below=0.1cm of shap] {Pourquoi ces d\'ecisions ?};
+\node[question, below=0.1cm of ccl] {Qu'a-t-on appris ?};
+\end{tikzpicture}
+
+\vspace{0.6em}
+\small Chaque \'etape r\'epond \`a une question qui motive la suivante.
+Tout cod\'e \emph{from scratch} (numpy/pandas).
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Les donn\'ees}
+
+\begin{frame}{\'Etape 1 --- Le German Credit Dataset}
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{UCI Statlog} (Hofmann, 1994)
+\begin{itemize}
+    \item 1\,000 demandes de cr\'edit
+    \item 20 attributs (7 num., 13 cat.)
+    \item Cible : d\'efaut de paiement (0/1)
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Pourquoi ce dataset ?}
+\begin{itemize}
+    \item Scoring cr\'edit = d\'ecision \`a fort impact
+    \item Risque de discrimination historique
+    \item Cas d'\'ecole en IA responsable
+\end{itemize}
+\end{column}
+\begin{column}{0.42\textwidth}
+\centering\small
+\begin{tabular}{lc}
+\toprule
+\textbf{Stat} & \textbf{Valeur} \\
+\midrule
+Bon (0) & 700 (70\%) \\
+Mauvais (1) & 300 (30\%) \\
+\midrule
+Num\'eriques & 7 \\
+Cat\'egorielles & 13 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.8em}
+\begin{alertblock}{}
+\small D\'es\'equilibre 70/30 $\Rightarrow$\\ accuracy na\"ive trompeuse
+\end{alertblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Exploration}
+
+\begin{frame}{\'Etape 2 --- Biais pr\'eexistants dans les donn\'ees}
+\textbf{Question} : avant tout mod\`ele, y a-t-il d\'ej\`a des disparit\'es entre groupes ?
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\centering\textbf{\textcolor{accent}{Genre}}
+
+\small
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Bon} & \textbf{D\'efaut} \\
+\midrule
+Homme (690) & 72\% & 28\% \\
+Femme (310) & 65\% & 35\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\scriptsize \'Ecart $\approx$ 7 points
+\end{column}
+\begin{column}{0.48\textwidth}
+\centering\textbf{\textcolor{fair}{\^Age}}
+
+\small
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Bon} & \textbf{D\'efaut} \\
+\midrule
+Adulte $>$25 (810) & 72\% & 28\% \\
+Jeune $\leq$25 (190) & 60\% & 40\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\scriptsize \'Ecart $\approx$ 12 points
+\end{column}
+\end{columns}
+
+\vspace{0.8em}
+\begin{alertblock}{Cons\'equence}
+Un mod\`ele performant \textbf{reproduira} ces disparit\'es historiques.
+Bonne performance $\neq$ mod\`ele \'equitable.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{\'Etape 2 --- Deux attributs sensibles}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{accent}{Genre}}
+\begin{itemize}
+    \item Extrait de \texttt{personal\_status\_sex}
+    \item A91/A93/A94 $\to$ homme
+    \item A92/A95 $\to$ femme
+    \item Privil\'egi\'e : homme
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{fair}{\^Age}}
+\begin{itemize}
+    \item Binaris\'e au seuil de 25 ans
+    \item Adulte ($> 25$) / jeune ($\leq 25$)
+    \item Privil\'egi\'e : adulte
+    \item Biais plus marqu\'e (+12 pts)
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.8em}
+\begin{block}{D\'ecision de conception}
+Les deux colonnes sont \textbf{retir\'ees des features} $\Rightarrow$ pas de discrimination \emph{directe}.
+
+\vspace{0.2em}
+Mais des \textbf{proxies} (features corr\'el\'ees) peuvent encoder indirectement l'information sensible. \`A v\'erifier via SHAP (\'etape~9).
+\end{block}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Pr\'eparation}
+
+\begin{frame}{\'Etape 3 --- Pr\'eparation des donn\'ees}
+\begin{columns}[T]
+\begin{column}{0.52\textwidth}
+\textbf{Pr\'etraitement}
+\begin{itemize}
+    \item \textbf{Num\'eriques} (6 col.) : z-score
+    $$x' = \frac{x - \mu_{\text{train}}}{\sigma_{\text{train}}}$$
+    \item \textbf{Cat\'egorielles} (12 col.) : one-hot
+    \item R\'esultat : $\sim$44 features
+    \item Fit sur train, appliqu\'e au val/test
+\end{itemize}
+\end{column}
+\begin{column}{0.45\textwidth}
+\textbf{Split stratifi\'e 60/20/20}
+
+\vspace{0.3em}
+\small
+\begin{tabular}{lcc}
+\toprule
+& \textbf{Taille} & \textbf{R\^ole} \\
+\midrule
+Train & $\sim$600 & Entra\^inement \\
+Val & $\sim$200 & Seuil, PP \\
+Test & $\sim$200 & \'Eval.\ finale \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\scriptsize Seed fix\'e (42) pour reproductibilit\'e.
+Stratifi\'e : chaque split conserve le ratio 70/30.
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\begin{alertblock}{Attention --- pas de fuite d'information}
+$\mu$ et $\sigma$ calcul\'es \textbf{uniquement sur le train} (ddof=1).
+Les cat\'egories inconnues au val/test sont mises \`a z\'ero.
+\end{alertblock}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Mod\`ele}
+
+\begin{frame}{\'Etape 4 --- R\'egression logistique from scratch}
+\textbf{Mod\`ele} :
+$P(\text{d\'efaut}=1 \mid x) = \sigma(w^\top x + b)$
+\quad avec \quad
+$\sigma(z) = \frac{1}{1 + e^{-z}}$
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Entra\^inement}
+\begin{itemize}
+    \item Perte : cross-entropy + L2
+    \item Adam ($\text{lr}=0.03$, $\beta_1\!=\!0.9$, $\beta_2\!=\!0.999$)
+    \item R\'egularisation $\lambda = 0.01$
+    \item Early stopping (patience 300)
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Seuil de d\'ecision}
+\begin{itemize}
+    \item Pas fix\'e \`a 0.5 (d\'es\'equilibre !)
+    \item Balayage $\tau \in [0.1,\; 0.9]$
+    \item Maximise la \textbf{balanced accuracy} :
+\end{itemize}
+$$\text{BalAcc} = \tfrac{1}{2}(\text{TPR} + \text{TNR})$$
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\begin{block}{Perte (avec poids pour le reweighing)}
+$\mathcal{L} = -\frac{1}{n}\sum_{i} s_i \big[ y_i \ln p_i + (1-y_i) \ln(1 - p_i) \big] + \frac{\lambda}{2} \|w\|^2$
+\hfill {\small ($s_i = 1$ pour le baseline)}
+\end{block}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{M\'etriques}
+
+\begin{frame}{\'Etape 5 --- M\'etriques de performance}
+\textbf{Question} : comment \'evaluer un mod\`ele sur un dataset d\'es\'equilibr\'e ?
+
+\vspace{0.5em}
+\small
+\begin{tabular}{lp{10cm}}
+\toprule
+\textbf{M\'etrique} & \textbf{Pourquoi ?} \\
+\midrule
+\textbf{AUC ROC} & Invariante au seuil. Capacit\'e \`a s\'eparer les classes. Calcul\'ee par Wilcoxon-Mann-Whitney. \\
+\textbf{Balanced Acc.} & $\frac{1}{2}(\text{TPR}+\text{TNR})$. Adapt\'ee au d\'es\'equilibre (vs accuracy na\"ive). \\
+\textbf{ECE} & Expected Calibration Error (cf.~cours incertitude). \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\normalsize
+\textbf{ECE} : $\displaystyle\text{ECE} = \sum_{b=1}^{B} \frac{|B_b|}{n}\, \big|\text{acc}(B_b) - \text{conf}(B_b)\big|$
+
+\vspace{0.2em}
+\small Mesure si la confiance du mod\`ele correspond \`a la r\'ealit\'e.
+Un mod\`ele bien calibr\'e a ECE $\approx 0$.
+\end{frame}
+
+\begin{frame}{\'Etape 5 --- M\'etriques d'\'equit\'e (cf.~cours fairness)}
+Soit $S$ l'attribut sensible, $Y$ la cible, $\hat{Y}$ la pr\'ediction.
+
+\vspace{0.5em}
+\begin{tabular}{lll}
+\toprule
+\textbf{Crit\`ere} & \textbf{D\'efinition} & \textbf{Signification} \\
+\midrule
+\textbf{Demographic Parity} & $\big|P(\hat{Y}{=}1|S{=}0) - P(\hat{Y}{=}1|S{=}1)\big|$ & M\^eme taux de s\'election \\
+\textbf{Equal Opportunity} & $\big|\text{TPR}_{S=0} - \text{TPR}_{S=1}\big|$ & M\^eme TPR \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.8em}
+\textbf{\'Evaluation du baseline} (test) :
+
+\vspace{0.3em}
+\small
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\centering\textbf{Genre}
+\begin{tabular}{lcc}
+\toprule
+& S\'election & TPR \\
+\midrule
+Homme & $\approx 0.41$ & $\approx 0.70$ \\
+Femme & $\approx 0.50$ & $\approx 0.74$ \\
+$|\Delta|$ & 0.094 & 0.044 \\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.48\textwidth}
+\centering\textbf{\^Age}
+\begin{tabular}{lcc}
+\toprule
+& S\'election & TPR \\
+\midrule
+Adulte & $\approx 0.42$ & $\approx 0.77$ \\
+Jeune & $\approx 0.51$ & $\approx 0.59$ \\
+$|\Delta|$ & 0.081 & \textbf{0.179} \\
+\bottomrule
+\end{tabular}
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\normalsize
+$\Rightarrow$ Le baseline \textbf{n'est pas \'equitable}. |EO gap| pour l'\^age = 0.179 : \textbf{correction n\'ecessaire}.
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{\'Equit\'e}
+
+\begin{frame}{\'Etape 6 --- Reweighing (pr\'e-traitement)}
+\textbf{Question} : peut-on corriger les biais en repondérant les exemples ?
+
+\vspace{0.3em}
+\textbf{Principe} (cf.~cours fairness-mitigation) : rendre $S \perp Y$ dans le train.
+
+$$w_i = \frac{P(S{=}s_i) \cdot P(Y{=}y_i)}{P(S{=}s_i,\; Y{=}y_i)}$$
+
+\begin{columns}[T]
+\begin{column}{0.52\textwidth}
+\textbf{Intuition} :
+\begin{itemize}
+    \item Sous-groupe sous-repr\'esent\'e dans une classe $\Rightarrow$ poids $w > 1$
+    \item Surrepr\'esent\'e $\Rightarrow$ poids $w < 1$
+    \item On entra\^ine un \textbf{nouveau mod\`ele} avec ces poids
+    \item Un mod\`ele par attribut sensible
+\end{itemize}
+\end{column}
+\begin{column}{0.44\textwidth}
+\centering\small
+\begin{tabular}{lcc}
+\toprule
+& $Y{=}0$ & $Y{=}1$ \\
+\midrule
+Privil\'egi\'e & $w \approx 1$ & $w > 1$ \\
+Non-priv. & $w > 1$ & $w \approx 1$ \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\scriptsize Direction typique des poids
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{\'Etape 7 --- Seuils par groupe (post-traitement)}
+\textbf{Question} : peut-on corriger \textbf{sans r\'e-entra\^iner} ?
+
+\vspace{0.5em}
+\textbf{Principe} : ajuster le seuil \textbf{s\'epar\'ement par groupe} pour \'egaliser le taux de s\'election.
+
+$$\tau_{\text{global}} \to \tau_{g_0}, \tau_{g_1} \quad\text{t.q.}\quad P(\hat{Y}{=}1|S{=}g_0) \approx P(\hat{Y}{=}1|S{=}g_1)$$
+
+\begin{itemize}
+    \item Seuils calibr\'es sur la \textbf{validation} ($\sim$200 exemples)
+    \item Crit\`ere : Demographic Parity
+\end{itemize}
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{exampleblock}{Avantage}
+Pas de r\'e-entra\^inement. M\^eme mod\`ele, seul le seuil change.
+\end{exampleblock}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{alertblock}{Limite}
+Peu de donn\'ees de calibration $\Rightarrow$ seuils potentiellement instables.
+\end{alertblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{\'Etape 8 --- Comparaison : 4 configurations}
+\small
+\begin{table}
+\centering
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Attr.} & \textbf{Configuration} & \textbf{AUC} & \textbf{BalAcc} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ \\
+\midrule
+Genre & Baseline          & 0.793 & 0.701 & 0.094 & 0.044 \\
+Genre & Reweighing        & 0.793 & 0.701 & 0.094 & 0.044 \\
+Genre & Reweighing + PP   & 0.793 & 0.727 & 0.238 & 0.192 \\
+\midrule
+\^Age  & Baseline          & 0.793 & 0.701 & 0.081 & 0.179 \\
+\^Age  & Reweighing        & 0.789 & 0.713 & 0.081 & 0.202 \\
+\^Age  & Reweighing + PP   & 0.789 & 0.712 & \textbf{0.056} & 0.261 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.3em}
+\normalsize
+\textbf{Observations cl\'es :}
+\begin{itemize}
+    \item \textbf{Genre} : reweighing \textbf{sans effet} (lignes identiques) $\Rightarrow$ pas de proxy
+    \item \textbf{\^Age} : reweighing + PP r\'eduit $|\Delta\text{DP}|$ (0.081 $\to$ \textbf{0.056})
+    \item \textbf{Mais} $|\Delta\text{EO}|$ augmente (0.179 $\to$ 0.261) $\Rightarrow$ \textbf{compromis}
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Le th\'eor\`eme d'impossibilit\'e en action}
+\begin{alertblock}{Chouldechova 2017, Kleinberg 2016}
+Il est \textbf{math\'ematiquement impossible} de satisfaire simultan\'ement Demographic Parity, Equal Opportunity et calibration, sauf si les taux de base sont \'egaux entre groupes.
+\end{alertblock}
+
+\vspace{0.5em}
+\textbf{Ce qu'on observe} :
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+Pour l'\textbf{\^age} :
+\begin{itemize}
+    \item R\'eduire $|\Delta\text{DP}|$ $\Rightarrow$ $|\Delta\text{EO}|$ \textbf{augmente}
+    \item 0.081 $\to$ 0.056 (DP \checkmark)
+    \item 0.179 $\to$ 0.261 (EO $\times$)
+\end{itemize}
+
+\vspace{0.3em}
+Ce n'est pas un \'echec de la m\'ethode --- c'est une \textbf{limite fondamentale}.
+\end{column}
+\begin{column}{0.42\textwidth}
+\centering
+\begin{tikzpicture}[
+    node distance=1cm,
+    crit/.style={rectangle, draw, rounded corners, font=\small\bfseries,
+                 minimum width=1.8cm, minimum height=0.7cm, align=center}
+]
+\node[crit, fill=fair!15] (dp) {DP};
+\node[crit, fill=accent!15, right=1cm of dp] (eo) {EO};
+\coordinate (mid) at ($(dp)!0.5!(eo)$);
+\node[crit, fill=neutral!15, below=0.8cm of mid] (cal) {Calibration};
+
+\draw[<->, thick, alertc] (dp) -- node[above, font=\scriptsize] {tension} (eo);
+\draw[<->, thick, alertc] (dp) -- (cal);
+\draw[<->, thick, alertc] (eo) -- (cal);
+\end{tikzpicture}
+
+\vspace{0.3em}
+\scriptsize On ne peut pas tout avoir.\\Il faut \textbf{choisir}.
+\end{column}
+\end{columns}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Interpr\'etabilit\'e}
+
+\begin{frame}{\'Etape 9 --- SHAP lin\'eaire exact}
+\textbf{Question} : quelles features d\'eterminent les d\'ecisions ?
+
+\vspace{0.3em}
+Pour un mod\`ele lin\'eaire, les \textbf{valeurs de Shapley} sont exactes (pas d'approximation) :
+
+$$\phi_i(x) = w_i \cdot \left(x_i - \mathbb{E}_{\text{train}}[x_i]\right)$$
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Top 5 features} (baseline) :
+\begin{enumerate}
+    \item \texttt{checking\_status}
+    \item \texttt{duration\_in\_month}
+    \item \texttt{credit\_amount}
+    \item \texttt{credit\_history}
+    \item \texttt{savings\_account\_bonds}
+\end{enumerate}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Importance par permutation}
+\begin{itemize}
+    \item M\'elanger une colonne $\to$ mesurer la \textbf{chute d'AUC}
+    \item 10 r\'ep\'etitions par feature
+    \item M\'ethode compl\'ementaire au SHAP
+\end{itemize}
+
+\vspace{0.3em}
+\begin{exampleblock}{}
+\small Les deux m\'ethodes \textbf{convergent} sur le classement.
+\end{exampleblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{\'Etape 9 --- D\'etection de proxies}
+\textbf{Question} : des features encodent-elles \textbf{indirectement} le genre ou l'\^age ?
+
+\vspace{0.3em}
+Un \textbf{proxy} = feature \`a la fois \textbf{corr\'el\'ee} ($|r| > 0.15$) \`a $S$ \textbf{et influente} (SHAP \'elev\'e).
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{accent}{Genre}}
+\begin{itemize}
+    \item Aucune feature \`a la fois influente ET corr\'el\'ee
+    \item \textbf{Proxies faibles}
+    \item $\Rightarrow$ Retirer la colonne suffit
+    \item Coh\'erent : reweighing sans effet
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{fair}{\^Age}}
+\begin{itemize}
+    \item \texttt{duration\_in\_month} :\\ $|r| > 0.15$ + top 2 SHAP
+    \item \textbf{Proxy actif}
+    \item $\Rightarrow$ Le mod\`ele ``voit'' l'\^age
+    \item Explique l'effet du reweighing
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\begin{block}{Le\c{c}on fondamentale}
+L'interpr\'etabilit\'e \textbf{explique} pourquoi le reweighing fonctionne pour l'\^age mais pas pour le genre. Sans SHAP, on ne comprendrait pas.
+\end{block}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Robustesse}
+
+\begin{frame}{\'Etape 10 --- Perturbation et calibration}
+\textbf{Question} : les corrections d'\'equit\'e fragilisent-elles le mod\`ele ?
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Protocole}
+\begin{itemize}
+    \item Num. : $x_j + \varepsilon$, $\varepsilon \sim \mathcal{N}(0,\, 0.2 \cdot \sigma_j)$
+    \item Cat. : swap al\'eatoire ($p{=}0.1$)
+\end{itemize}
+
+\vspace{0.3em}
+\textbf{ECE} (cours incertitude) :
+$$\text{ECE} = \sum_{b} \frac{|B_b|}{n} |\text{acc}_b - \text{conf}_b|$$
+
+\small Mesure l'\'ecart confiance / r\'ealit\'e.
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{R\'esultats}
+
+\small
+\begin{tabular}{lccc}
+\toprule
+& AUC & BalAcc & ECE \\
+\midrule
+Clean & 0.793 & 0.701 & $\sim$0.05 \\
+Perturb\'e & $\sim$0.77 & $\sim$0.68 & $\sim$0.06 \\
+$\Delta$ & --0.02 & --0.02 & +0.01 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\normalsize
+\begin{itemize}
+    \item Corr\'elation scores : $r \approx 0.97$
+    \item Mod\`eles fair \textbf{aussi robustes}
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.3em}
+\begin{exampleblock}{Conclusion}
+Les corrections d'\'equit\'e \textbf{n'amplifient pas la fragilit\'e}. Le mod\`ele lin\'eaire est naturellement robuste.
+\end{exampleblock}
+\end{frame}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Synth\`ese}
+
+\begin{frame}{\'Etape 11 --- Ce qu'on a appris}
+\begin{enumerate}
+    \item \textbf{Les donn\'ees sont biais\'ees} --- taux de d\'efaut diff\'erents entre groupes.
+          Un bon mod\`ele reproduira ces biais.
+
+    \item \textbf{Retirer l'attribut sensible ne suffit pas toujours} ---
+          genre : oui (proxies faibles).
+          \^Age : non (\texttt{duration\_in\_month} = proxy actif).
+
+    \item \textbf{Le reweighing d\'epend des proxies} ---
+          sans proxy, aucun effet. Avec proxy, le mod\`ele change.
+
+    \item \textbf{Compromis DP/EO in\'evitable} ---
+          $|\Delta\text{DP}| \downarrow$ $\Rightarrow$ $|\Delta\text{EO}| \uparrow$
+          (th\'eor\`eme d'impossibilit\'e).
+
+    \item \textbf{Interpr\'etabilit\'e \'eclaire l'\'equit\'e} ---
+          SHAP + corr\'elation = d\'etection de proxies.
+
+    \item \textbf{Mod\`ele robuste} --- $r \approx 0.97$, m\^eme apr\`es corrections.
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{Les trois piliers sont li\'es}
+\centering
+\begin{tikzpicture}[
+    node distance=1.8cm,
+    pillar/.style={rectangle, draw, rounded corners=5pt, minimum width=3.5cm,
+                   minimum height=1.3cm, font=\large\bfseries, text centered, align=center},
+    link/.style={<->, very thick, gray!50}
+]
+\node[pillar, fill=fair!20] (eq) {\'Equit\'e};
+\node[pillar, fill=neutral!20, right=3cm of eq] (interp) {Interpr\'etabilit\'e};
+\node[pillar, fill=accent!20, below right=1.6cm and 1.5cm of eq] (rob) {Robustesse};
+
+\draw[link] (eq) -- node[above, font=\small, text=gray!70!black] {proxies} (interp);
+\draw[link] (eq) -- node[left, font=\small, text=gray!70!black, pos=0.4] {stabilit\'e} (rob);
+\draw[link] (interp) -- node[right, font=\small, text=gray!70!black, pos=0.4] {confiance} (rob);
+\end{tikzpicture}
+
+\vspace{1em}
+\begin{itemize}
+    \item L'\textbf{interpr\'etabilit\'e} r\'ev\`ele les probl\`emes d'\textbf{\'equit\'e} (proxies)
+    \item La \textbf{robustesse} garantit que les corrections d'\'equit\'e sont \textbf{fiables}
+    \item La \textbf{confiance} dans le mod\`ele requiert les trois \`a la fois
+\end{itemize}
+
+\vspace{0.5em}
+\centering\small\textit{Code from scratch --- numpy et pandas uniquement.}
+\end{frame}
+
+\end{document}
