@@ -23,7 +23,7 @@ env/
 debug.log
 
 # Course PDFs (copyrighted material)
-*.pdf
+# *.pdf
 
 # Intermediate/experimental output runs (keep only final results)
 outputs/test_improved/
