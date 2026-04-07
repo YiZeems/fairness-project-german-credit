@@ -5,7 +5,10 @@
 	- ipynb executé 
 
 - [t] refaire esthetique doc latex beamer
-	- [t] phrase sur trait 
+	- [t] phrase sur trait Page 2
+	- [t] retirer les doubles tirets "--", ça fait trop IA
+	- [t] il manque des caractères après 3. Histogramme ..., Page 4
+	- [t] ajouter notre utilisation de l'IA comme demandé par Charlotte
 	
 - [t] décider de nouvelles implémentations 
 
