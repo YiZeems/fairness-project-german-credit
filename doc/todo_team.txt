@@ -23,4 +23,4 @@
 	- retirer robustesse: incertitude, interval de confiance 
 	- pas de biais sur ce jeu de donnée
 	- classe déséquilibré 
-	
+- rendu: 11 mai 
