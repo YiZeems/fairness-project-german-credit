@@ -1,0 +1,12 @@
+# 2026-04-07
+
+- [t] relire
+	- doc/*.pdf 
+	- ipynb executé 
+
+- [t] refaire esthetique doc latex beamer
+	- [t] phrase sur trait 
+	
+- [t] décider de nouvelles implémentations 
+
+- [t] mettre à jours le README.md 
