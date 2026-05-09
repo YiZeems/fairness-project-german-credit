@@ -1,0 +1,413 @@
+\documentclass[aspectratio=169, 10pt]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+\setbeamerfont{frametitle}{size=\normalsize}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows.meta, positioning, calc, fit, backgrounds, decorations.pathreplacing}
+\usepackage{multicol}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, breakable}
+
+\definecolor{accent}{HTML}{2196F3}
+\definecolor{fair}{HTML}{4CAF50}
+\definecolor{alertc}{HTML}{d9534f}
+\definecolor{neutral}{HTML}{FF9800}
+\definecolor{darkgrey}{HTML}{555555}
+
+\setbeamercolor{block title}{bg=accent!80!black, fg=white}
+\setbeamercolor{block body}{bg=accent!8}
+\setbeamercolor{block title alerted}{bg=alertc!80!black, fg=white}
+\setbeamercolor{block body alerted}{bg=alertc!8}
+\setbeamercolor{block title example}{bg=fair!80!black, fg=white}
+\setbeamercolor{block body example}{bg=fair!8}
+
+\newcommand{\img}[2][0.95\linewidth]{\centering\includegraphics[width=#1]{../outputs/#2}}
+
+\title[IA Responsable]{IA Responsable, German Credit Dataset}
+\subtitle{Parcours p\'edagogique du notebook \texttt{responsiveAI-german-credit.ipynb}}
+\author{IA708 -- T\'el\'ecom Paris}
+\date{2026}
+
+\begin{document}
+
+% ==============================================================================
+\begin{frame}\titlepage\end{frame}
+
+\begin{frame}{Plan}\tableofcontents\end{frame}
+
+% ==============================================================================
+\section{Vue d'ensemble du parcours}
+
+\begin{frame}{Le parcours en 12 \'etapes}
+\centering
+\scriptsize
+\begin{tikzpicture}[
+    node distance=0.3cm and 0.6cm,
+    block/.style={rectangle, draw, rounded corners=3pt, minimum height=0.7cm,
+                  minimum width=2cm, text centered, font=\scriptsize,
+                  text width=2cm, align=center},
+    arrow/.style={-Stealth, thick, accent!70}
+]
+\node[block, fill=accent!12] (data) {1.~Donn\'ees\\1000 lignes};
+\node[block, fill=accent!12, right=of data] (explore) {2.~Exploration};
+\node[block, fill=accent!12, right=of explore] (prep) {3.~Pr\'eparation};
+\node[block, fill=accent!12, right=of prep] (model) {4.~Mod\`ele\\baseline};
+\node[block, fill=accent!12, right=of model] (metrics) {5.~M\'etriques};
+
+\node[block, fill=fair!12, below=0.7cm of data] (rw) {6.~Reweighing\\(pr\'e)};
+\node[block, fill=fair!12, right=of rw] (pp) {7.~Seuils/grp\\(post)};
+\node[block, fill=fair!12, right=of pp] (comp) {8.~Comparaison\\4 configs};
+\node[block, fill=fair!12, right=of comp] (shap) {9.~SHAP +\\proxies};
+
+\node[block, fill=neutral!12, below=0.7cm of rw] (boot) {10.~Bootstrap\\incertitude};
+\node[block, fill=neutral!12, right=of boot] (cal) {11.~Calibration\\Platt};
+\node[block, fill=alertc!12, right=of cal] (ccl) {12.~Conclusion};
+
+\draw[arrow] (data) -- (explore);
+\draw[arrow] (explore) -- (prep);
+\draw[arrow] (prep) -- (model);
+\draw[arrow] (model) -- (metrics);
+\draw[arrow] (metrics.south) -- ++(0,-0.2) -| (rw.north);
+\draw[arrow] (rw) -- (pp);
+\draw[arrow] (pp) -- (comp);
+\draw[arrow] (comp) -- (shap);
+\draw[arrow] (shap.south) -- ++(0,-0.2) -| (boot.north);
+\draw[arrow] (boot) -- (cal);
+\draw[arrow] (cal) -- (ccl);
+
+\node[font=\tiny, text=accent!80!black, above=0.05cm of explore] {Y a-t-il des biais~?};
+\node[font=\tiny, text=fair!80!black, above=0.05cm of pp] {Peut-on les corriger~?};
+\node[font=\tiny, text=neutral!80!black, above=0.05cm of cal] {Confiance dans les r\'esultats~?};
+\end{tikzpicture}
+\vfill
+\textbf{Trois axes du sujet :} \'equit\'e (vert), interpr\'etabilit\'e (jaune via SHAP), incertitude (orange, substitut au volet robustesse).
+\end{frame}
+
+% ==============================================================================
+\section{Donn\'ees et baseline}
+
+\begin{frame}{1-2. UCI German Credit, exploration}
+\begin{columns}[T]
+\column{0.5\linewidth}
+\img{01_exploration.png}
+\column{0.45\linewidth}
+\begin{block}{Le dataset}
+1000 demandes de cr\'edit, 20 attributs (6 num + 14 cat).\\
+Cible : \textbf{d\'efaut de paiement} (30\%) vs bon payeur (70\%).
+\end{block}
+\begin{exampleblock}{Attributs sensibles}
+\begin{itemize}
+\item \textbf{Genre} : extrait de \texttt{personal\_status\_sex} (690 hommes / 310 femmes)
+\item \textbf{\^Age} : binaris\'e au seuil \textbf{25 ans} (810 older / 190 younger)
+\end{itemize}
+\end{exampleblock}
+\begin{alertblock}{Biais brut visible}
+Taux de d\'efaut : \textbf{younger 42\%} vs older 27\%, female 35\% vs male 28\%.
+\end{alertblock}
+\end{columns}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{3-4. Pr\'eparation et baseline (sklearn)}
+\begin{columns}[T]
+\column{0.42\linewidth}
+\begin{block}{Pipeline scikit-learn}
+\small
+\begin{itemize}
+\item \texttt{ColumnTransformer} :
+  \begin{itemize}\scriptsize
+  \item \texttt{StandardScaler} (num)
+  \item \texttt{OneHotEncoder} (cat)
+  \end{itemize}
+\item Split stratifi\'e \textbf{60/20/20}
+\item \textbf{Retrait} de \texttt{personal\_status\_sex} et \texttt{age\_in\_years} pour \'eviter la discrimination directe
+\end{itemize}
+\end{block}
+\begin{exampleblock}{Baseline}
+\small \texttt{LogisticRegression} L2, $C=1$, \texttt{liblinear}.
+
+\textbf{Convergence} : log-loss train 0.43 d\`es 10 iter, val 0.56 (cible $\approx 0.5$).
+\end{exampleblock}
+
+\column{0.55\linewidth}
+\img{00_convergence.png}
+\centering\tiny Convergence quasi-instantan\'ee (\texttt{liblinear}).
+\end{columns}
+\end{frame}
+
+% ==============================================================================
+\section{M\'etriques d'\'equit\'e}
+
+\begin{frame}{5. Trois familles de m\'etriques d'\'equit\'e}
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners, minimum height=2.4cm,
+                minimum width=4.2cm, align=center, font=\small},
+    title/.style={font=\bfseries\small}
+]
+\node[box, fill=accent!12] (dp) at (-5.2, 0) {%
+    \textcolor{accent!80!black}{\textbf{Demographic Parity}}\\[3pt]
+    $\hat{Y} \perp A$\\[3pt]
+    $|\Pr(\hat{Y}=1|A=0) - \Pr(\hat{Y}=1|A=1)|$\\[3pt]
+    \scriptsize \textit{m\^eme taux de s\'election}
+};
+\node[box, fill=fair!12] (eo) at (0, 0) {%
+    \textcolor{fair!60!black}{\textbf{Equal Opportunity}}\\[3pt]
+    $\hat{Y} \perp A \mid Y=1$\\[3pt]
+    $|\text{TPR}_{A=0} - \text{TPR}_{A=1}|$\\[3pt]
+    \scriptsize \textit{m\^eme taux de vrais positifs}
+};
+\node[box, fill=alertc!12] (cal) at (5.2, 0) {%
+    \textcolor{alertc!70!black}{\textbf{Calibration}}\\[3pt]
+    $\Pr(Y=1 \mid S=s) \approx s$\\[3pt]
+    \scriptsize $\text{ECE} = \sum_b \tfrac{|B_b|}{n}|\text{acc}-\text{conf}|$\\[3pt]
+    \scriptsize \textit{score = vraie probabilit\'e}
+};
+\end{tikzpicture}
+\vfill
+\begin{alertblock}{Th\'eor\`eme d'impossibilit\'e (Chouldechova 2017, Kleinberg 2016)}
+Si les taux de base diff\`erent entre groupes ($p_0 \neq p_1$) : \textbf{on ne peut pas} satisfaire deux de ces crit\`eres simultan\'ement.
+
+\smallskip
+\centering
+$\dfrac{\text{PPV}}{1-\text{PPV}} = \dfrac{p}{1-p} \cdot \dfrac{1-\text{FNR}}{\text{FPR}}$
+\end{alertblock}
+\end{frame}
+
+% ==============================================================================
+\section{Mitigation de l'in\'equit\'e}
+
+\begin{frame}{6-7. Trois familles de mitigation (cours)}
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners, minimum height=1.4cm,
+                minimum width=3.6cm, align=center, font=\small},
+    arr/.style={-{Stealth[length=5pt]}, thick}
+]
+\node[box, fill=accent!15] (pre) {\textbf{Pre-processing}\\\scriptsize modifier les donn\'ees};
+\node[box, fill=fair!15, right=1.6cm of pre] (in) {\textbf{In-processing}\\\scriptsize modifier l'algo};
+\node[box, fill=alertc!15, right=1.6cm of in] (post) {\textbf{Post-processing}\\\scriptsize modifier les sorties};
+
+\node[font=\scriptsize\itshape, text width=3.5cm, align=center, above=0.4cm of pre] {Reweighing\\OT Repair\\Fair Repr.};
+\node[font=\scriptsize\itshape, text width=3.5cm, align=center, above=0.4cm of in] {R\'egularisation\\Lagrangien proxy\\Adversarial};
+\node[font=\scriptsize\itshape, text width=3.5cm, align=center, above=0.4cm of post] {Seuils par groupe};
+
+\node[font=\scriptsize\itshape, text width=3.5cm, align=center, below=0.3cm of pre, text=accent!70!black] {\textbf{ce projet :}\\Reweighing};
+\node[font=\scriptsize, text width=3.5cm, align=center, below=0.3cm of in, text=darkgrey] {\itshape (non test\'e)};
+\node[font=\scriptsize\itshape, text width=3.5cm, align=center, below=0.3cm of post, text=alertc!70!black] {\textbf{ce projet :}\\Seuils par groupe};
+
+\draw[arr] (pre) -- (in);
+\draw[arr] (in) -- (post);
+\end{tikzpicture}
+\vfill
+\begin{block}{Reweighing : poids $w_i = \dfrac{P(S=s_i)\,P(Y=y_i)}{P(S=s_i, Y=y_i)}$}
+Rend $S \perp Y$ dans la distribution pond\'er\'ee. Si les femmes sans d\'efaut sont sous-repr\'esent\'ees, on augmente leur poids.
+\end{block}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{8. Compromis performance / \'equit\'e (4 configs)}
+\img[0.85\linewidth]{02_tradeoff.png}
+\vfill
+\begin{columns}[T]
+\column{0.48\linewidth}
+\begin{exampleblock}{Genre (gauche)}
+\small Biais initial \textbf{n\'egligeable} ($|\Delta\text{DP}|=0.010$). Le post-processing \textbf{cr\'ee} un biais artificiel ($|\Delta\text{DP}|=0.105$, $|\Delta\text{EO}|=0.196$) car les seuils ne g\'en\'eralisent pas (val=200).
+\end{exampleblock}
+
+\column{0.48\linewidth}
+\begin{alertblock}{\^Age (droite) : impossibilit\'e empirique}
+\small PP r\'eduit $|\Delta\text{DP}|$ \textbf{0.125 $\to$ 0.060} mais \textbf{double} $|\Delta\text{EO}|$ (\textbf{0.066 $\to$ 0.135}).
+
+C'est exactement le th\'eor\`eme d'impossibilit\'e \emph{en action}.
+\end{alertblock}
+\end{columns}
+\end{frame}
+
+% ==============================================================================
+\section{Interpr\'etabilit\'e}
+
+\begin{frame}{9. SHAP lin\'eaire : formule exacte}
+\begin{block}{Pour un mod\`ele lin\'eaire (Lundberg \& Lee 2017, Corollary~1)}
+\centering
+$\phi_i(x) = w_i \cdot (x_i - \mathbb{E}[x_i])$
+\end{block}
+\smallskip
+\begin{columns}[T]
+\column{0.48\linewidth}
+\centering\img[0.95\linewidth]{03_shap.png}
+\column{0.48\linewidth}
+\begin{exampleblock}{Lecture}
+Top features SHAP :
+\begin{itemize}\small
+\item \texttt{checking\_status} (loin devant)
+\item \texttt{credit\_history}
+\item \texttt{installment\_rate}
+\item \texttt{savings\_account\_bonds}
+\item \texttt{purpose}, \texttt{credit\_amount}
+\end{itemize}
+$\Rightarrow$ Le mod\`ele s'appuie sur des variables \textbf{financi\`eres l\'egitimes}, pas (en apparence) sur des proxies sensibles.
+\end{exampleblock}
+\end{columns}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{9. SHAP vs Permutation Importance}
+\img[0.85\linewidth]{04_shap_vs_perm.png}
+\vfill
+\centering\small Les deux m\'ethodes s'accordent : \texttt{checking\_status}, \texttt{credit\_history}, \texttt{credit\_amount}, \texttt{duration\_in\_month} dominent. Concordance $\Rightarrow$ confiance accrue dans le diagnostic.
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{9. D\'etection de proxies : approche Charlotte}
+\begin{block}{R\'egression logistique \texttt{features $\rightarrow$ attribut sensible}}
+Si on peut pr\'edire $A$ depuis les features, alors $A$ est encod\'e indirectement.
+\end{block}
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Attribut} & \textbf{AUC proxy} & \textbf{Lecture} \\
+\midrule
+Genre & 0.69 & signal proxy mod\'er\'e \\
+\^Age & \textcolor{alertc!80!black}{\textbf{0.86}} & \textcolor{alertc!80!black}{\textbf{tr\`es fortement reconstructible}} \\
+\bottomrule
+\end{tabular}
+\vfill
+\begin{alertblock}{Cons\'equence m\'ethodologique}
+Retirer \texttt{age\_in\_years} ne suffit pas \`a "cacher" l'\^age : il est encod\'e dans \texttt{housing}, \texttt{employment}, \texttt{job}\ldots
+
+\textbf{Recommandation Charlotte :} \emph{ne pas retirer les attributs sensibles}, mais les utiliser comme pond\'erations dans une mitigation explicite (\textit{fairness through awareness}).
+\end{alertblock}
+\end{frame}
+
+% ==============================================================================
+\section{Quantification d'incertitude}
+
+\begin{frame}{10. Bootstrap : substitut \`a la robustesse adversariale}
+\begin{block}{Choix m\'ethodologique (feedback Charlotte)}
+\textbf{Robustesse adversariale} (perturbation gaussienne) $\to$ \textbf{Bootstrap CI} (incertitude \'epist\'emique). Inspir\'e du cours \textit{Robustness and Uncertainty} (G.~Franchi).
+\end{block}
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners=2pt, minimum height=0.6cm, minimum width=1.6cm,
+                font=\scriptsize, align=center, fill=accent!10},
+    arr/.style={-Stealth, thick}
+]
+\node[box] (data) {Train\\$n=600$};
+\node[box, above right=0.0cm and 1.2cm of data] (b1) {Bootstrap $1$};
+\node[box, right=1.2cm of data] (b2) {Bootstrap $2$};
+\node[box, below right=0.0cm and 1.2cm of data] (bB) {Bootstrap $B$};
+\node[font=\scriptsize, right=0.5cm of b2, anchor=west] (dots) {\ldots};
+\node[box, fill=fair!10, right=2.6cm of b2] (agg) {Quantiles\\IC 95\%};
+
+\draw[arr] (data) -- (b1);
+\draw[arr] (data) -- (b2);
+\draw[arr] (data) -- (bB);
+\draw[arr] (b1) -- (agg);
+\draw[arr] (b2) -- (agg);
+\draw[arr] (bB) -- (agg);
+\end{tikzpicture}
+\vfill
+\img[0.95\linewidth]{05_bootstrap.png}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{10. Intervalles de confiance bootstrap (B=200)}
+\centering\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{M\'etrique} & \textbf{Moyenne} & \textbf{$\sigma$} & \textbf{IC 2.5\%} & \textbf{IC 97.5\%} \\
+\midrule
+AUC                  & 0.764 & 0.019 & 0.723 & 0.795 \\
+BalAcc               & 0.682 & 0.023 & 0.637 & 0.726 \\
+\midrule
+$|\Delta\text{DP}|$ genre & 0.035 & 0.028 & 0.001 & 0.105 \\
+$|\Delta\text{EO}|$ genre & 0.089 & 0.044 & 0.017 & 0.176 \\
+$|\Delta\text{DP}|$ \^age  & \textbf{0.104} & 0.046 & \textbf{0.020} & \textbf{0.202} \\
+$|\Delta\text{EO}|$ \^age  & 0.086 & 0.048 & 0.018 & 0.194 \\
+\bottomrule
+\end{tabular}
+\vfill
+\begin{alertblock}{Lecture critique}
+Le biais $|\Delta\text{DP}|$ \^age = 0.125 a un IC95\% \textbf{[0.02, 0.20]}. Tr\`es large : sur 1000 lignes, les conclusions doivent \^etre nuanc\'ees par l'incertitude statistique.
+\end{alertblock}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{10. Incertitude par individu}
+\img[0.95\linewidth]{06_indiv_uncertainty.png}
+\vfill
+\centering\small
+\textbf{\`A gauche :} IC 95\% par individu, tri\'e par score. Les individus pr\`es du seuil sont les plus incertains.\\
+\textbf{\`A droite :} la fameuse parabole, $\sigma$ max au milieu (proba $\approx$ 0.5). C'est l'incertitude \emph{\'epist\'emique}.
+\end{frame}
+
+% ==============================================================================
+\section{Calibration et conclusion}
+
+\begin{frame}{11. Calibration : ECE et Platt scaling}
+\begin{columns}[T]
+\column{0.6\linewidth}
+\img[0.95\linewidth]{07_calibration.png}
+\column{0.4\linewidth}
+\begin{block}{ECE}
+\centering $\text{ECE} = \sum_b \frac{|B_b|}{n}\,|\text{acc}(B_b) - \text{conf}(B_b)|$
+\end{block}
+\centering
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{lc}
+\toprule
+\textbf{Mod\`ele} & \textbf{ECE} \\
+\midrule
+Baseline       & 0.082 \\
+Platt scaling  & 0.080 \\
+\bottomrule
+\end{tabular}
+\vfill
+\small \emph{Gain marginal} : la r\'egression logistique est naturellement bien calibr\'ee.
+\end{columns}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{12. Conclusion}
+\centering
+\begin{tikzpicture}[
+    box/.style={rectangle, draw, rounded corners=3pt, minimum height=1.6cm,
+                minimum width=4.5cm, align=center, font=\small, text width=4.4cm}
+]
+\node[box, fill=accent!10] (eq) at (-4.7, 0.8) {\textbf{\'Equit\'e}\\\scriptsize Biais d'\^age significatif (0.125), genre n\'egligeable. PP r\'eduit DP mais double EO (impossibilit\'e).};
+\node[box, fill=fair!10] (interp) at (0, 0.8) {\textbf{Interpr\'etabilit\'e}\\\scriptsize SHAP + perm convergent. Proxy AUC = \textbf{0.86} pour l'\^age $\Rightarrow$ retrait insuffisant.};
+\node[box, fill=neutral!10] (unc) at (4.7, 0.8) {\textbf{Incertitude}\\\scriptsize IC95\% large sur DP $\Rightarrow$ prudence statistique. Calibration d\'ej\`a bonne.};
+\node[box, fill=alertc!10, minimum width=10cm] (lim) at (0, -1.3) {\textbf{Limites \& pistes}\\\scriptsize Petit dataset, lin\'eaire, reweighing simple. Pistes : \texttt{ExponentiatedGradient}, transport optimal, fairness through awareness avec \texttt{age} conserv\'e.};
+\end{tikzpicture}
+\end{frame}
+
+% ------------------------------------------------------------------------------
+\begin{frame}{R\'ef\'erences}
+\small
+\begin{itemize}
+\item Lundberg \& Lee, \emph{A Unified Approach to Interpreting Model Predictions}, NeurIPS 2017
+\item Chouldechova, \emph{Fair prediction with disparate impact}, Big Data 2017
+\item Kleinberg, Mullainathan, Raghavan, \emph{Inherent trade-offs in the fair determination of risk scores}, ITCS 2017
+\item Kamiran \& Calders, \emph{Data preprocessing techniques for classification without discrimination}, KAIS 2012 (reweighing)
+\item Cours IA708 : F.~d'Alch\'e-Buc, C.~Laclau, G.~Franchi
+\end{itemize}
+\vfill
+\centering\small
+\textbf{Code :} \texttt{responsiveAI-german-credit.ipynb} (sklearn + fairlearn + shap)\\
+\textbf{Outputs :} \texttt{outputs/*.png} \quad \textbf{Reproductibilit\'e :} \texttt{papermill}
+\end{frame}
+
+\end{document}

@@ -1,0 +1,501 @@
+\documentclass[aspectratio=169, 11pt]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{footline}[frame number]
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[french]{babel}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{shapes, arrows.meta, positioning}
+
+\definecolor{accent}{HTML}{2196F3}
+\definecolor{fair}{HTML}{4CAF50}
+\definecolor{alertc}{HTML}{d9534f}
+\definecolor{neutral}{HTML}{FF9800}
+
+\title{IA Responsable : German Credit Dataset}
+\subtitle{\'Equit\'e, Interpr\'etabilit\'e \& Robustesse}
+\author{IA708 -- T\'el\'ecom Paris}
+\date{2026}
+
+\begin{document}
+
+\begin{frame}
+\titlepage
+\end{frame}
+
+\begin{frame}{Plan}
+\tableofcontents
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Les donn\'ees}
+
+\begin{frame}{Le German Credit Dataset}
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+\textbf{UCI Statlog} (Hofmann, 1994)
+\begin{itemize}
+    \item 1\,000 demandes de cr\'edit
+    \item 20 attributs (7 num., 13 cat.)
+    \item Cible : d\'efaut de paiement
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{Pourquoi ce dataset ?}
+\begin{itemize}
+    \item Scoring cr\'edit = d\'ecision \`a fort impact humain
+    \item Risque de discrimination historique
+    \item Cas d'\'ecole en IA responsable
+\end{itemize}
+\end{column}
+\begin{column}{0.42\textwidth}
+\centering
+\small
+\begin{tabular}{lc}
+\toprule
+\textbf{Stat} & \textbf{Valeur} \\
+\midrule
+Bon payeur (0) & 700 (70\%) \\
+Mauvais (1) & 300 (30\%) \\
+\midrule
+Hommes & 690 (69\%) \\
+Femmes & 310 (31\%) \\
+\midrule
+Adultes ($>$25) & 810 (81\%) \\
+Jeunes ($\leq$25) & 190 (19\%) \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+\scriptsize D\'es\'equilibre de la cible ET des groupes
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Exploration : biais dans les donn\'ees}
+\textbf{Constat cl\'e} : les taux de d\'efaut diff\`erent \textbf{d\'ej\`a} entre groupes.
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Genre} & \textbf{Bon} & \textbf{D\'efaut} \\
+\midrule
+Homme & 72\% & 28\% \\
+Femme & 65\% & 35\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\scriptsize \'Ecart $\approx$ 7 points
+\end{column}
+\begin{column}{0.48\textwidth}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{\^Age} & \textbf{Bon} & \textbf{D\'efaut} \\
+\midrule
+Adulte & 72\% & 28\% \\
+Jeune & 60\% & 40\% \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.3em}
+\scriptsize \'Ecart $\approx$ 12 points
+\end{column}
+\end{columns}
+
+\vspace{1em}
+\begin{alertblock}{Cons\'equence}
+Un mod\`ele qui pr\'edit bien reproduira ces disparit\'es historiques.
+$\Rightarrow$ \textbf{bonne performance $\neq$ mod\`ele \'equitable.}
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Choix : deux attributs sensibles}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{accent}{Genre}}
+\begin{itemize}
+    \item Extrait de \texttt{personal\_status\_sex}
+    \item Privil\'egi\'e : homme
+    \item Biais mod\'er\'e dans les donn\'ees
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{fair}{\^Age}}
+\begin{itemize}
+    \item Binaris\'e au seuil de 25 ans
+    \item Privil\'egi\'e : adulte
+    \item Biais plus marqu\'e (12 points)
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.8em}
+\begin{block}{D\'ecision de conception}
+Les deux colonnes (\texttt{personal\_status\_sex}, \texttt{age\_in\_years})
+sont \textbf{retir\'ees des features} $\Rightarrow$ pas de discrimination \emph{directe}.
+
+\vspace{0.3em}
+Mais des \textbf{proxies} (variables corr\'el\'ees) peuvent encoder indirectement
+l'information sensible. On le v\'erifiera via SHAP.
+\end{block}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Mod\'elisation}
+
+\begin{frame}{Pipeline complet}
+\centering
+\begin{tikzpicture}[
+    node distance=0.5cm and 1.3cm,
+    block/.style={rectangle, draw, rounded corners, minimum height=0.9cm,
+                  minimum width=2.2cm, text centered, font=\small,
+                  text width=2.1cm, align=center},
+    arrow/.style={-Stealth, thick},
+    note/.style={font=\scriptsize, text=gray}
+]
+\node[block, fill=accent!15] (data) {Donn\'ees\newline 1000 lignes};
+\node[block, fill=accent!15, right=of data] (eda) {Exploration\newline biais?};
+\node[block, fill=accent!15, right=of eda] (prep) {Pr\'eparation\newline split 60/20/20};
+\node[block, fill=accent!15, right=of prep] (model) {Baseline\newline R\'eg.\ logist.};
+
+\node[block, fill=fair!15, below=1cm of data] (rw) {Reweighing\newline pr\'e-trait.};
+\node[block, fill=fair!15, right=of rw] (pp) {Seuils/groupe\newline post-trait.};
+\node[block, fill=neutral!15, right=of pp] (shap) {SHAP\newline proxies?};
+\node[block, fill=alertc!15, right=of shap] (rob) {Perturbation\newline ECE};
+
+\draw[arrow] (data) -- (eda);
+\draw[arrow] (eda) -- (prep);
+\draw[arrow] (prep) -- (model);
+\draw[arrow] (model) -- (rw);
+\draw[arrow] (rw) -- (pp);
+\draw[arrow] (pp) -- (shap);
+\draw[arrow] (shap) -- (rob);
+
+\node[note, above=0.1cm of eda] {Sec.\ 1};
+\node[note, above=0.1cm of model] {Sec.\ 2};
+\node[note, below=0.1cm of rw] {Sec.\ 3};
+\node[note, below=0.1cm of shap] {Sec.\ 4};
+\node[note, below=0.1cm of rob] {Sec.\ 5};
+\end{tikzpicture}
+
+\vspace{0.5em}
+\small Tout cod\'e \emph{from scratch} (numpy/pandas, sans scikit-learn).
+\end{frame}
+
+\begin{frame}{Mod\`ele de base}
+\textbf{R\'egression logistique} :
+$P(\text{d\'efaut}=1 \mid x) = \sigma(w^\top x + b)$
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Entra\^inement}
+\begin{itemize}
+    \item Adam ($\text{lr}=0.03$), L2 ($\lambda=0.01$)
+    \item Early stopping (patience 300)
+    \item Seuil : max balanced accuracy (val)
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{Pr\'etraitement}
+\begin{itemize}
+    \item z-score (num.) + one-hot (cat.)
+    \item $\sim$44 features apr\`es encodage
+    \item Genre et \^age retir\'es
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\begin{block}{Choix des m\'etriques}
+Dataset d\'es\'equilibr\'e (70/30) $\Rightarrow$ accuracy simple trompeuse. \\
+On utilise \textbf{AUC ROC} (invariant au seuil), \textbf{balanced accuracy}
+$= \frac{1}{2}(\text{TPR} + \text{TNR})$, et \textbf{ECE} (calibration).
+\end{block}
+\end{frame}
+
+\begin{frame}{R\'esultats baseline : \'equit\'e}
+\textbf{Question} : le baseline est-il \'equitable ?
+
+\vspace{0.3em}
+\small
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\centering\textbf{Genre}
+
+\begin{tabular}{lcc}
+\toprule
+& S\'election & TPR \\
+\midrule
+Homme & 0.406 & 0.697 \\
+Femme & 0.500 & 0.741 \\
+\midrule
+$|\Delta|$ & \textbf{0.094} & 0.044 \\
+\bottomrule
+\end{tabular}
+\end{column}
+\begin{column}{0.48\textwidth}
+\centering\textbf{\^Age}
+
+\begin{tabular}{lcc}
+\toprule
+& S\'election & TPR \\
+\midrule
+Adulte & 0.425 & 0.767 \\
+Jeune & 0.506 & 0.588 \\
+\midrule
+$|\Delta|$ & 0.081 & \textbf{0.179} \\
+\bottomrule
+\end{tabular}
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\normalsize
+\textbf{Analyse} : le baseline pr\'esente des \'ecarts mesurables.
+Le |EO gap| pour l'\^age (0.179) est pr\'eoccupant : les jeunes d\'efaillants
+sont moins bien d\'etect\'es. $\Rightarrow$ \textbf{correction n\'ecessaire.}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{\'Equit\'e}
+
+\begin{frame}{D\'efinitions (cours fairness)}
+Soit $S$ l'attribut sensible, $Y$ la cible, $\hat{Y}$ la pr\'ediction.
+
+\vspace{0.5em}
+\begin{tabular}{lll}
+\toprule
+\textbf{Crit\`ere} & \textbf{Signification} & \textbf{On mesure} \\
+\midrule
+Demographic Parity & M\^eme taux de s\'election & $|P(\hat{Y}{=}1|S{=}0) - P(\hat{Y}{=}1|S{=}1)|$ \\
+Equal Opportunity & M\^eme TPR & $|\text{TPR}_{S=0} - \text{TPR}_{S=1}|$ \\
+Equalized Odds & M\^eme TPR + FPR & EOpp + m\^eme FPR \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.8em}
+\begin{alertblock}{Th\'eor\`eme d'impossibilit\'e (Chouldechova 2017, Kleinberg 2016)}
+On \textbf{ne peut pas} satisfaire DP, EO et calibration simultan\'ement
+(sauf si les taux de base sont \'egaux entre groupes).
+$\Rightarrow$ Il faut \textbf{choisir} ses compromis.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Reweighing (pr\'e-traitement)}
+\textbf{Id\'ee} : repondérer les exemples pour rendre $S \perp Y$ dans le train.
+
+$$w_i = \frac{P(S{=}s_i) \cdot P(Y{=}y_i)}{P(S{=}s_i, Y{=}y_i)}$$
+
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+Si les femmes sans d\'efaut sont sous-repr\'esent\'ees
+$\Rightarrow$ on augmente leur poids.
+
+\vspace{0.5em}
+Un mod\`ele par attribut sensible.
+\end{column}
+\begin{column}{0.42\textwidth}
+\centering\small
+\begin{tabular}{lcc}
+\toprule
+Groupe & $Y{=}0$ & $Y{=}1$ \\
+\midrule
+Privil. & $w \approx 1$ & $w > 1$ \\
+Non-priv. & $w > 1$ & $w \approx 1$ \\
+\bottomrule
+\end{tabular}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{Seuils par groupe (post-traitement)}
+\textbf{Id\'ee} : ajuster le seuil de classification par groupe sur la validation.
+
+\vspace{0.5em}
+\begin{itemize}
+    \item Seuil global $\tau$ $\to$ seuils $\tau_{g_0}, \tau_{g_1}$
+    \item Crit\`ere : \'egaliser le taux de s\'election (DP)
+    \item Calibr\'e sur la validation ($\sim$200 exemples)
+\end{itemize}
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\begin{exampleblock}{Avantage}
+Pas de r\'e-entra\^inement.
+\end{exampleblock}
+\end{column}
+\begin{column}{0.48\textwidth}
+\begin{alertblock}{Limite}
+Peu de donn\'ees de calibration $\Rightarrow$ bruit.
+\end{alertblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+\begin{frame}{R\'esultats : comparaison des 4 configurations}
+\small
+\begin{table}
+\centering
+\begin{tabular}{llcccc}
+\toprule
+\textbf{Attr.} & \textbf{Config.} & \textbf{AUC} & \textbf{BalAcc} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ \\
+\midrule
+Genre & Baseline          & 0.793 & 0.701 & 0.094 & 0.044 \\
+Genre & Reweighing        & 0.793 & 0.701 & 0.094 & 0.044 \\
+Genre & Reweighing + PP   & 0.793 & 0.727 & 0.238 & 0.192 \\
+\midrule
+\^Age  & Baseline          & 0.793 & 0.701 & 0.081 & 0.179 \\
+\^Age  & Reweighing        & 0.789 & 0.713 & 0.081 & 0.202 \\
+\^Age  & Reweighing + PP   & 0.789 & 0.712 & \textbf{0.056} & 0.261 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{0.3em}
+\textbf{Analyse :}
+\begin{itemize}
+    \item \textbf{Genre} : reweighing \textbf{sans effet} $\Rightarrow$ proxies faibles
+    \item \textbf{\^Age} : reweighing + PP r\'eduit $|\Delta\text{DP}|$ (0.081 $\to$ \textbf{0.056})
+    \item Mais $|\Delta\text{EO}|$ augmente (0.179 $\to$ 0.261)
+          $\Rightarrow$ \textbf{th\'eor\`eme d'impossibilit\'e en action}
+\end{itemize}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Interpr\'etabilit\'e}
+
+\begin{frame}{SHAP lin\'eaire exact}
+\textbf{Question} : quelles features d\'eterminent les d\'ecisions ?
+
+\vspace{0.3em}
+Pour un mod\`ele lin\'eaire, les \textbf{valeurs de Shapley} sont exactes :
+$$\phi_i(x) = w_i \cdot \left(x_i - \mathbb{E}_{\text{train}}[x_i]\right)$$
+
+\vspace{0.3em}
+\textbf{Top 5 features} (SHAP baseline) :
+\begin{enumerate}
+    \item \texttt{checking\_status} --- compte courant
+    \item \texttt{duration\_in\_month} --- dur\'ee du cr\'edit
+    \item \texttt{credit\_amount} --- montant
+    \item \texttt{credit\_history} --- historique
+    \item \texttt{savings\_account\_bonds} --- \'epargne
+\end{enumerate}
+
+\vspace{0.3em}
+Compl\'et\'e par l'\textbf{importance par permutation} (chute d'AUC quand on m\'elange une colonne). Les deux m\'ethodes convergent.
+\end{frame}
+
+\begin{frame}{D\'etection de proxies}
+\textbf{Question} : des features encodent-elles indirectement le genre ou l'\^age ?
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{accent}{Genre}}
+\begin{itemize}
+    \item Aucune feature \`a la fois influente ET corr\'el\'ee au genre
+    \item \textbf{Proxies faibles}
+    \item $\Rightarrow$ Retirer l'attribut suffit
+    \item Coh\'erent avec le reweighing sans effet
+\end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{\textcolor{fair}{\^Age}}
+\begin{itemize}
+    \item \texttt{duration\_in\_month} : corr\'el\'e \`a l'\^age ($|r| > 0.15$)
+          ET important (top 2 SHAP)
+    \item \textbf{Proxy actif}
+    \item $\Rightarrow$ Le mod\`ele ``voit'' l'\^age m\^eme sans la colonne
+    \item Explique pourquoi le reweighing a un effet pour l'\^age
+\end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.5em}
+\begin{block}{Le\c{c}on}
+Retirer l'attribut sensible $\neq$ \'equit\'e. L'interpr\'etabilit\'e permet
+de d\'etecter la discrimination indirecte via les proxies.
+\end{block}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Robustesse}
+
+\begin{frame}{Perturbation et calibration}
+\textbf{Question} : le mod\`ele r\'esiste-t-il au bruit ?
+
+\vspace{0.5em}
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+\textbf{Protocole}
+\begin{itemize}
+    \item Num\'eriques : $x_j + \varepsilon$, $\varepsilon \sim \mathcal{N}(0,\, 0.2 \cdot \sigma_j)$
+    \item Cat\'egoriels : swap al\'eatoire ($p{=}0.1$)
+\end{itemize}
+
+\vspace{0.5em}
+\textbf{ECE} (cours incertitude) :
+$\text{ECE} = \sum_{b} \frac{|B_b|}{n} |\text{acc}_b - \text{conf}_b|$
+
+Mesure l'\'ecart confiance / pr\'ecision r\'eelle.
+\end{column}
+\begin{column}{0.48\textwidth}
+\textbf{R\'esultats}
+\begin{itemize}
+    \item Corr\'elation scores $r \approx 0.97$
+    \item $\Delta$AUC $\approx$ --0.6 points
+    \item ECE stable ($\sim$0.05)
+    \item Mod\`eles fair \textbf{aussi robustes}
+\end{itemize}
+
+\vspace{0.5em}
+$\Rightarrow$ Mod\`ele \textbf{stable}. \\
+Les corrections d'\'equit\'e n'amplifient pas la fragilit\'e.
+\end{column}
+\end{columns}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════════════
+\section{Synth\`ese}
+
+\begin{frame}{Ce qu'on a appris}
+\begin{enumerate}
+    \item \textbf{Les donn\'ees sont biais\'ees} : taux de d\'efaut diff\'erents entre groupes
+          $\Rightarrow$ un bon mod\`ele reproduira ces biais.
+
+    \item \textbf{Retirer l'attribut sensible ne suffit pas toujours} :
+          pour le genre oui (proxies faibles), pour l'\^age non
+          (\texttt{duration\_in\_month} = proxy actif).
+
+    \item \textbf{Le reweighing est efficace quand il y a des proxies} :
+          sans proxy, il ne change rien.
+
+    \item \textbf{Compromis DP/EO in\'evitable} :
+          r\'eduire $|\Delta\text{DP}|$ augmente $|\Delta\text{EO}|$
+          (th\'eor\`eme d'impossibilit\'e).
+
+    \item \textbf{L'interpr\'etabilit\'e \'eclaire l'\'equit\'e} :
+          SHAP + corr\'elation = d\'etection de proxies.
+
+    \item \textbf{Le mod\`ele est robuste} au bruit, m\^eme apr\`es corrections.
+\end{enumerate}
+
+\vspace{0.5em}
+\centering\small
+\textit{Tout cod\'e from scratch (numpy/pandas, sans scikit-learn).}
+\end{frame}
+
+\end{document}
