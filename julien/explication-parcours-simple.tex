@@ -68,7 +68,7 @@ explication pas \`{a} pas du notebook}}
 \vspace{-1em}
 
 \begin{abstract}
-\noindent Ce document accompagne le \texttt{notebook\_simple.ipynb} et d\'{e}taille chaque \'{e}tape du parcours d'analyse. L'objectif : \'{e}valuer un mod\`{e}le de scoring cr\'{e}dit sous trois angles --- \textbf{\'{e}quit\'{e}}, \textbf{interpr\'{e}tabilit\'{e}} et \textbf{robustesse} --- en partant des donn\'{e}es brutes et en progressant vers des conclusions argument\'{e}es. Tout est cod\'{e} \emph{from scratch} (numpy/pandas, sans scikit-learn ni AIF360). Ce parcours suit la structure du cours IA708.
+\noindent Ce document accompagne le notebook \texttt{responsiveAI-german-credit.ipynb} et d\'{e}taille chaque \'{e}tape du parcours d'analyse. L'objectif : \'{e}valuer un mod\`{e}le de scoring cr\'{e}dit sous trois angles --- \textbf{\'{e}quit\'{e}}, \textbf{interpr\'{e}tabilit\'{e}} et \textbf{quantification d'incertitude} (qui remplace la robustesse adversariale, sur conseil de l'enseignante) --- en partant des donn\'{e}es brutes et en progressant vers des conclusions argument\'{e}es. Stack utilis\'{e} : \texttt{scikit-learn}, \texttt{fairlearn}, \texttt{shap} ; reproductibilit\'{e} via \texttt{papermill}. Ce parcours suit la structure du cours IA708.
 \end{abstract}
 
 \tableofcontents
@@ -100,7 +100,7 @@ Avant d'entrer dans le code, comprenons la \textbf{logique du parcours}. Chaque 
 \node[block, fill=fair!12, right=of pp] (comp) {8.~Comparer\newline \scriptsize 4 configs};
 
 \node[block, fill=neutral!12, below=1.1cm of metrics] (shap) {9.~SHAP\newline \scriptsize interpr\'{e}t.};
-\node[block, fill=neutral!12, right=of shap] (rob) {10.~Robustesse\newline \scriptsize perturbation};
+\node[block, fill=neutral!12, right=of shap] (rob) {10.~Bootstrap\newline \scriptsize IC \& incertitude};
 \node[block, fill=alertc!12, right=of rob] (ccl) {11.~Conclusion\newline \scriptsize le\c{c}ons};
 
 \draw[arrow] (data) -- (explore);
@@ -223,22 +223,25 @@ On retire \texttt{personal\_status\_sex} et \texttt{age\_in\_years} des features
 Retirer la colonne ne suffit pas toujours. D'autres features peuvent \^{e}tre \textbf{corr\'{e}l\'{e}es} \`{a} l'attribut sensible et servir de \textbf{proxy} --- le mod\`{e}le peut alors discriminer \emph{indirectement}. On v\'{e}rifiera cela \`{a} l'\'{e}tape~9 (SHAP).
 \end{attentionbox}
 
-\subsection{Pr\'{e}traitement : z-score et one-hot}
+\subsection{Pr\'{e}traitement : sklearn ColumnTransformer}
 
 \begin{itemize}
-    \item \textbf{Num\'{e}riques} (6 colonnes) : normalisation z-score $\displaystyle x' = \frac{x - \mu}{\sigma}$ avec $\mu$ et $\sigma$ calcul\'{e}s sur le train uniquement ($\text{ddof}=1$).
-    \item \textbf{Cat\'{e}gorielles} (12 colonnes) : one-hot encoding. Chaque modalit\'{e} devient une colonne binaire.
+    \item \textbf{Num\'{e}riques} (6 colonnes) : \texttt{StandardScaler} (z-score), $\mu$ et $\sigma$ calcul\'{e}s sur le train uniquement.
+    \item \textbf{Cat\'{e}gorielles} (12 colonnes) : \texttt{OneHotEncoder(handle\_unknown="ignore")}.
 \end{itemize}
 
-\noindent R\'{e}sultat : $\sim$44 features num\'{e}riques apr\`{e}s encodage.
+\noindent R\'{e}sultat : 56 features num\'{e}riques apr\`{e}s encodage.
 
 Le pr\'{e}processeur est \textbf{fit\'{e} sur le train} et \textbf{appliqu\'{e}} au val/test --- pas de fuite d'information.
 
 \begin{codebox}
-prep = Preprocessor().fit(features.iloc[tr])\\
-X\_tr = prep.transform(features.iloc[tr])  \# fit sur train\\
-X\_va = prep.transform(features.iloc[va])  \# appliqu\'{e} au val\\
-X\_te = prep.transform(features.iloc[te])  \# appliqu\'{e} au test
+preprocessor = ColumnTransformer([\\
+\quad ("num", StandardScaler(), NUMERIC),\\
+\quad ("cat", OneHotEncoder(handle\_unknown="ignore", sparse\_output=False), CATEG),\\
+])\\
+X\_tr = preprocessor.fit\_transform(features.iloc[idx\_tr])\\
+X\_va = preprocessor.transform(features.iloc[idx\_va])\\
+X\_te = preprocessor.transform(features.iloc[idx\_te])
 \end{codebox}
 
 \subsection{Split stratifi\'{e} 60/20/20}
@@ -258,11 +261,11 @@ R\^{o}le & Entra\^{i}nement & Choix du seuil, PP & \'{E}valuation finale \\
 \end{table}
 
 % ══════════════════════════════════════════════════════════════════════════════
-\section{Mod\`{e}le de base : r\'{e}gression logistique from scratch}
+\section{Mod\`{e}le de base : r\'{e}gression logistique sklearn}
 \label{sec:model}
 
 \begin{questionbox}[\'{E}tape 4 --- Quel mod\`{e}le, et comment l'entra\^{i}ner ?]
-On impl\'{e}mente une r\'{e}gression logistique enti\`{e}rement \`{a} la main. Pourquoi ? (1) C'est un mod\`{e}le interpr\'{e}table (chaque feature a un coefficient), (2) on ma\^{i}trise chaque \'{e}tape, (3) le sujet l'exige.
+On utilise une r\'{e}gression logistique de \texttt{scikit-learn}. Pourquoi ce mod\`{e}le ? (1) C'est interpr\'{e}table (un coefficient par feature, formule SHAP exacte), (2) bien adapt\'{e} aux donn\'{e}es tabulaires, (3) calibr\'{e} par d\'{e}faut.
 \end{questionbox}
 
 \subsection{Le mod\`{e}le}
@@ -273,12 +276,12 @@ $$P(\text{d\'{e}faut}=1 \mid x) = \sigma(w^\top x + b) \quad \text{avec} \quad \
 
 \noindent o\`{u} $w \in \mathbb{R}^d$ est le vecteur de poids et $b$ le biais.
 
-\subsection{Entra\^{i}nement : Adam + r\'{e}gularisation}
+\subsection{Entra\^{i}nement (sklearn)}
 
-La perte est la \textbf{cross-entropy binaire} :
-$$\mathcal{L} = -\frac{1}{n}\sum_{i=1}^{n} s_i \Big[ y_i \ln p_i + (1-y_i) \ln(1 - p_i) \Big] + \frac{\lambda}{2} \|w\|^2$$
+La perte est la \textbf{cross-entropy binaire} avec p\'{e}nalisation L2 :
+$$\mathcal{L} = -\frac{1}{n}\sum_{i=1}^{n} s_i \Big[ y_i \ln p_i + (1-y_i) \ln(1 - p_i) \Big] + \frac{1}{2C} \|w\|^2$$
 
-\noindent o\`{u} $s_i$ est le poids de l'exemple (utilis\'{e} pour le reweighing, $s_i = 1$ pour le baseline) et $\lambda = 0.01$ est le coefficient L2.
+\noindent o\`{u} $s_i$ est le poids de l'exemple (utilis\'{e} pour le reweighing, $s_i = 1$ pour le baseline) et $C = 1$ est l'inverse de la r\'{e}gularisation (forme sklearn).
 
 \begin{table}[H]
 \centering
@@ -286,17 +289,24 @@ $$\mathcal{L} = -\frac{1}{n}\sum_{i=1}^{n} s_i \Big[ y_i \ln p_i + (1-y_i) \ln(1
 \toprule
 \textbf{Hyperparamètre} & \textbf{Valeur} \\
 \midrule
-Optimiseur & Adam ($\beta_1=0.9$, $\beta_2=0.999$) \\
-Learning rate & 0.03 \\
-R\'{e}gularisation & L2, $\lambda = 0.01$ \\
-Early stopping & Patience 300 (sur val loss) \\
-Initialisation biais & $b_0 = \ln\!\big(\bar{y} / (1-\bar{y})\big)$ \\
+Solver & \texttt{liblinear} (descente coordonn\'{e}e) \\
+P\'{e}nalisation & L2, $C = 1$ \\
+Max iterations & 1000 (convergence \`{a} $\sim$10 it\'{e}rations) \\
+Random state & 42 \\
 \bottomrule
 \end{tabular}
-\caption{Hyperparamètres de la r\'{e}gression logistique.}
+\caption{Hyperparamètres de \texttt{LogisticRegression} sklearn.}
 \end{table}
 
-L'initialisation du biais \`{a} la log-odds de la moyenne cible permet une convergence plus rapide.
+\subsection{V\'{e}rification de convergence (feedback \'{e}quipe)}
+
+L'\'{e}quipe attendait une convergence \`{a} partir de 100 it\'{e}rations et une log-loss autour de 0.5. \textbf{Mesure :}
+
+\begin{itemize}
+    \item Log-loss train final : \textbf{0.43}
+    \item Log-loss val : \textbf{0.56} (proche de 0.5 attendu sur d\'{e}s\'{e}quilibre 70/30)
+    \item Convergence atteinte d\`{e}s 10 it\'{e}rations (\texttt{liblinear} converge tr\`{e}s vite sur ce dataset)
+\end{itemize}
 
 \subsection{Seuil de d\'{e}cision}
 
@@ -304,11 +314,7 @@ On ne fixe pas le seuil \`{a} 0.5. On balaye $\tau \in [0.1,\; 0.9]$ et on chois
 
 $$\text{BalAcc} = \frac{1}{2}\left(\frac{TP}{TP+FN} + \frac{TN}{TN+FP}\right)$$
 
-Ce choix est motiv\'{e} par le d\'{e}s\'{e}quilibre 70/30 : un seuil fixe \`{a} 0.5 favorise la classe majoritaire.
-
-\subsection{Ce que le notebook montre}
-
-Le graphique de la \textbf{val loss} en fonction des epochs montre la convergence puis l'arr\^{e}t anticip\'{e} quand la perte ne diminue plus.
+Ce choix est motiv\'{e} par le d\'{e}s\'{e}quilibre 70/30 : un seuil fixe \`{a} 0.5 favorise la classe majoritaire. R\'{e}sultat : $\tau = 0.18$ sur la validation.
 
 % ══════════════════════════════════════════════════════════════════════════════
 \section{M\'{e}triques : mesurer ce qui compte}
@@ -506,18 +512,22 @@ On compare syst\'{e}matiquement 4 configurations pour chaque attribut sensible :
 \textbf{Attr.} & \textbf{Configuration} & \textbf{AUC} & \textbf{BalAcc} & $\boldsymbol{|\Delta\textbf{DP}|}$ & $\boldsymbol{|\Delta\textbf{EO}|}$ \\
 \midrule
 \rowcolor{accent!5}
-Genre & Baseline          & 0.793 & 0.701 & 0.094 & 0.044 \\
+Genre & Baseline          & 0.785 & 0.669 & 0.010 & 0.058 \\
 \rowcolor{accent!5}
-Genre & Reweighing        & 0.793 & 0.701 & 0.094 & 0.044 \\
+Genre & Reweighing        & 0.785 & 0.665 & 0.006 & 0.050 \\
 \rowcolor{accent!10}
-Genre & Reweighing + PP   & 0.793 & 0.727 & 0.238 & 0.192 \\
+Genre & Baseline + PP     & 0.785 & 0.669 & 0.105 & 0.196 \\
+\rowcolor{accent!10}
+Genre & Reweighing + PP   & 0.785 & 0.669 & 0.128 & 0.230 \\
 \midrule
 \rowcolor{fair!5}
-\^{A}ge  & Baseline          & 0.793 & 0.701 & 0.081 & 0.179 \\
+\^{A}ge  & Baseline          & 0.785 & 0.669 & 0.125 & 0.066 \\
 \rowcolor{fair!5}
-\^{A}ge  & Reweighing        & 0.789 & 0.713 & 0.081 & 0.202 \\
+\^{A}ge  & Reweighing        & 0.784 & 0.640 & 0.132 & 0.098 \\
 \rowcolor{fair!10}
-\^{A}ge  & Reweighing + PP   & 0.789 & 0.712 & \textbf{0.056} & 0.261 \\
+\^{A}ge  & Baseline + PP     & 0.785 & 0.644 & \textbf{0.060} & \textbf{0.135} \\
+\rowcolor{fair!10}
+\^{A}ge  & Reweighing + PP   & 0.784 & 0.650 & 0.069 & 0.221 \\
 \bottomrule
 \end{tabular}
 \caption{Performance et \'{e}quit\'{e} sur le test (PP = post-processing par seuils/groupe).}
@@ -526,11 +536,11 @@ Genre & Reweighing + PP   & 0.793 & 0.727 & 0.238 & 0.192 \\
 
 \subsection{Analyse d\'{e}taill\'{e}e}
 
-\paragraph{Genre --- le reweighing n'a aucun effet.}
-Les lignes Baseline et Reweighing sont \textbf{identiques} (AUC = 0.793, $|\Delta\text{DP}| = 0.094$). Cela signifie que repondérer les exemples n'a pas modifi\'{e} le mod\`{e}le. Pourquoi ? Parce qu'apr\`{e}s retrait de \texttt{personal\_status\_sex}, les features restantes ne sont que faiblement corr\'{e}l\'{e}es au genre. Il n'y a pas de \textbf{proxy fort} --- le mod\`{e}le ne \og voit \fg{} pas le genre. Nous confirmerons cela \`{a} l'\'{e}tape~9 (SHAP).
+\paragraph{Genre --- biais quasi nul, le PP cr\'{e}e un biais artificiel.}
+Apr\`{e}s retrait de \texttt{personal\_status\_sex}, $|\Delta\text{DP}| = 0.010$ : pas de discrimination directe d\'{e}tectable. Le reweighing n'a quasi aucun effet ($0.010 \to 0.006$). \textbf{En revanche}, le post-processing par seuils par groupe \textbf{cr\'{e}e} un biais artificiel ($|\Delta\text{DP}| = 0.105$, $|\Delta\text{EO}| = 0.196$). Pourquoi ? Le calibrage des seuils sur 200 exemples de validation g\'{e}n\'{e}ralise mal au test (200 exemples).
 
-\paragraph{\^{A}ge --- le reweighing modifie le mod\`{e}le.}
-L'AUC passe de 0.793 \`{a} 0.789 : le reweighing a r\'{e}ellement chang\'{e} les poids du mod\`{e}le. C'est parce que des features comme \texttt{duration\_in\_month} sont corr\'{e}l\'{e}es \`{a} l'\^{a}ge --- ce sont des \textbf{proxies actifs}. Le reweighing + PP r\'{e}duit $|\Delta\text{DP}|$ de 0.081 \`{a} \textbf{0.056} (am\'{e}lioration), \textbf{mais} $|\Delta\text{EO}|$ augmente de 0.179 \`{a} 0.261.
+\paragraph{\^{A}ge --- biais initial significatif, compromis DP/EO clair.}
+$|\Delta\text{DP}| = 0.125$ persiste apr\`{e}s retrait de \texttt{age\_in\_years}, coh\'{e}rent avec les taux de d\'{e}faut tr\`{e}s diff\'{e}rents (younger 42\,\% vs older 27\,\%). Le post-processing r\'{e}duit $|\Delta\text{DP}|$ de 0.125 \`{a} \textbf{0.060} (am\'{e}lioration), \textbf{mais} $|\Delta\text{EO}|$ \textbf{double} : $0.066 \to 0.135$. C'est l'illustration empirique parfaite du th\'{e}or\`{e}me d'impossibilit\'{e}.
 
 \subsection{Le th\'{e}or\`{e}me d'impossibilit\'{e} en action}
 \label{sec:impossibility}
@@ -623,80 +633,133 @@ M\'{e}thode compl\'{e}mentaire : on m\'{e}lange al\'{e}atoirement une colonne et
 SHAP (local $\to$ global) et permutation (global) convergent sur le classement des features. C'est rassurant : les deux approches donnent la m\^{e}me image des d\'{e}cisions du mod\`{e}le.
 \end{leconbox}
 
-\subsection{D\'{e}tection de proxies}
+\subsection{D\'{e}tection de proxies (deux approches)}
 
-Un \textbf{proxy} est une feature qui est \`{a} la fois :
-\begin{enumerate}
-    \item \textbf{Corr\'{e}l\'{e}e} \`{a} l'attribut sensible ($|r| > 0.15$), et
-    \item \textbf{Influente} dans le mod\`{e}le (SHAP \'{e}lev\'{e}).
-\end{enumerate}
+Un \textbf{proxy} est une feature qui permet de pr\'{e}dire l'attribut sensible. Deux m\'{e}thodes :
+
+\paragraph{1. Corr\'{e}lation univari\'{e}e ($|r|$).}
+Pour chaque feature, on calcule la corr\'{e}lation absolue avec l'attribut sensible binaris\'{e}. Rapide mais ignore les interactions multivari\'{e}es.
+
+\paragraph{2. R\'{e}gression logistique \texttt{features $\to$ attribut sensible} (approche Charlotte).}
+On entra\^{i}ne un mod\`{e}le pour pr\'{e}dire l'attribut sensible \`{a} partir des autres features. \textbf{Si l'AUC $> 0.5$ + $\epsilon$, l'attribut est reconstructible} $\Rightarrow$ proxy multivari\'{e} actif.
 
 \begin{table}[H]
 \centering
-\begin{tabular}{lll}
+\begin{tabular}{lcl}
 \toprule
-\textbf{Attribut} & \textbf{Proxies ?} & \textbf{Cons\'{e}quence} \\
+\textbf{Attribut} & \textbf{AUC proxy (multivari\'{e})} & \textbf{Interpr\'{e}tation} \\
 \midrule
-\textbf{Genre} & Aucun proxy fort & Retirer la colonne suffit \\
-& & $\Rightarrow$ reweighing sans effet \\
-\midrule
-\textbf{\^{A}ge} & \texttt{duration\_in\_month} & Le mod\`{e}le \og voit \fg{} l'\^{a}ge \\
-& ($|r| > 0.15$, top 2 SHAP) & $\Rightarrow$ reweighing a un effet \\
+\textbf{Genre} & 0.69 & Signal proxy mod\'{e}r\'{e} \\
+\textbf{\^{A}ge}  & \textbf{0.86} & \textbf{Tr\`{e}s fortement reconstructible} \\
 \bottomrule
 \end{tabular}
-\caption{R\'{e}sum\'{e} de la d\'{e}tection de proxies.}
+\caption{D\'{e}tection multivari\'{e}e de proxies (r\'{e}gression logistique).}
 \end{table}
+
+\noindent\textbf{Recommandation Charlotte :} retirer l'attribut sensible ne suffit pas. La meilleure strat\'{e}gie est de \textbf{conserver l'attribut} et de l'utiliser explicitement comme pond\'{e}ration dans une mitigation in-processing (\textit{fairness through awareness}).
+
+\subsection{SHAP : avant vs apr\`{e}s retrait des attributs sensibles}
+
+Pour visualiser concr\`{e}tement le m\'{e}canisme de proxy, on entra\^{i}ne un mod\`{e}le \textbf{avec} \texttt{age\_in\_years} et \texttt{personal\_status\_sex} en plus des autres features, et on compare l'importance SHAP par feature avec le mod\`{e}le \textbf{sans} (notre baseline).
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Mod\`{e}le} & \textbf{AUC test} \\
+\midrule
+Avec attributs sensibles & 0.781 \\
+Sans attributs sensibles (baseline) & 0.785 \\
+\midrule
+Co\^{u}t du retrait & $-0.004$ (n\'{e}gligeable) \\
+\bottomrule
+\end{tabular}
+\caption{Co\^{u}t en performance du retrait des attributs sensibles.}
+\end{table}
+
+\textbf{Top 5 features qui absorbent l'effet apr\`{e}s retrait} ($\Delta$ Mean |SHAP| = sans $-$ avec, plus c'est haut plus la feature \og{} h\'{e}rite \fg{} de l'effet des attributs sensibles) :
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Feature} & \textbf{Avec} & \textbf{Sans} & \textbf{$\Delta$} \\
+\midrule
+\texttt{present\_employment\_since}   & 0.171 & 0.207 & \textbf{+0.036} \\
+\texttt{telephone}                    & 0.216 & 0.238 & +0.022 \\
+\texttt{credit\_history}              & 0.470 & 0.489 & +0.020 \\
+\texttt{duration\_in\_month}          & 0.278 & 0.289 & +0.011 \\
+\texttt{number\_of\_existing\_credits} & 0.140 & 0.150 & +0.009 \\
+\bottomrule
+\end{tabular}
+\caption{Features absorbant l'effet des attributs sensibles (top 5 par $\Delta$ SHAP).}
+\end{table}
+
+\begin{leconbox}[Le\c{c}on]
+SHAP rend visible ce que la r\'{e}gression proxy mesure num\'{e}riquement. Quand on retire l'attribut sensible, son influence ne dispara\^{i}t pas : elle se \textbf{redistribue} aux features les plus corr\'{e}l\'{e}es. C'est l'illustration la plus claire de la \textbf{discrimination indirecte}.
+\end{leconbox}
 
 \begin{leconbox}[Le\c{c}on fondamentale]
 La d\'{e}tection de proxies \textbf{explique} pourquoi le reweighing fonctionne pour l'\^{a}ge mais pas pour le genre. L'interpr\'{e}tabilit\'{e} n'est pas un bonus --- c'est un outil essentiel pour comprendre et diagnostiquer les probl\`{e}mes d'\'{e}quit\'{e}.
 \end{leconbox}
 
 % ══════════════════════════════════════════════════════════════════════════════
-\section{Robustesse : le mod\`{e}le r\'{e}siste-t-il au bruit ?}
-\label{sec:robustesse}
+\section{Quantification d'incertitude : peut-on faire confiance aux chiffres ?}
+\label{sec:incertitude}
 
-\begin{questionbox}[\'{E}tape 10 --- Les corrections d'\'{e}quit\'{e} fragilisent-elles le mod\`{e}le ?]
-Un mod\`{e}le d\'{e}ploy\'{e} recevra des donn\'{e}es bruit\'{e}es (erreurs de saisie, mesures impr\'{e}cises). On simule ce bruit et on v\'{e}rifie la stabilit\'{e} des pr\'{e}dictions.
+\begin{questionbox}[\'{E}tape 10 --- Les biais mesur\'{e}s sont-ils statistiquement significatifs ?]
+Sur conseil de l'enseignante (Charlotte Laclau), nous rempla\c{c}ons la robustesse adversariale par une \textbf{quantification d'incertitude par bootstrap} (cf. cours \textit{Robustness and Uncertainty}, G.~Franchi). Le bootstrap mesure la stabilit\'{e} des d\'{e}cisions face \`{a} la variabilit\'{e} des donn\'{e}es.
 \end{questionbox}
 
-\subsection{Protocole de perturbation}
+\subsection{Protocole bootstrap}
+
+On entra\^{i}ne $B = 200$ mod\`{e}les sur des \'{e}chantillons tir\'{e}s avec remplacement du jeu d'entra\^{i}nement, puis on agr\`{e}ge les r\'{e}sultats. C'est l'approche d'\textbf{ensemble} la plus simple, analogue classique des \textit{Deep Ensembles} de Lakshminarayanan et al.\ (2017).
 
 \begin{itemize}
-    \item \textbf{Features num\'{e}riques} : $x_j \leftarrow x_j + \varepsilon$, avec $\varepsilon \sim \mathcal{N}(0,\; 0.2 \cdot \sigma_j^{\text{train}})$.
-    \item \textbf{Features cat\'{e}gorielles} : remplacement al\'{e}atoire par une autre modalit\'{e} avec probabilit\'{e} $p = 0.1$.
+    \item \textbf{Intervalles de confiance sur les m\'{e}triques} : quantiles 2.5\,\% et 97.5\,\% des $B$ valeurs.
+    \item \textbf{Intervalles de pr\'{e}diction par individu} : quantiles des scores des $B$ mod\`{e}les.
+    \item L'incertitude \textbf{\'{e}pist\'{e}mique} est captur\'{e}e par le d\'{e}saccord entre membres de l'ensemble.
 \end{itemize}
-
-Ce niveau de bruit simule des erreurs r\'{e}alistes (20\,\% de l'\'{e}cart-type pour les num\'{e}riques, 10\,\% de swaps pour les cat\'{e}goriels).
 
 \subsection{R\'{e}sultats}
 
 \begin{table}[H]
 \centering
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \toprule
-& \textbf{AUC} & \textbf{Balanced Acc.} & \textbf{ECE} \\
+\textbf{M\'{e}trique} & \textbf{Moyenne} & \textbf{$\sigma$} & \textbf{IC 2.5\,\%} & \textbf{IC 97.5\,\%} \\
 \midrule
-Clean & 0.7932 & 0.7012 & 0.0575 \\
-Perturb\'{e} & 0.7877 & 0.7048 & 0.0482 \\
-$\Delta$ & $-0.0055$ & $+0.0036$ & $-0.0092$ \\
+AUC                  & 0.764 & 0.019 & 0.723 & 0.795 \\
+Balanced Accuracy    & 0.682 & 0.023 & 0.637 & 0.726 \\
+$|\Delta\text{DP}|$ genre & 0.035 & 0.028 & 0.001 & 0.105 \\
+$|\Delta\text{EO}|$ genre & 0.089 & 0.044 & 0.017 & 0.176 \\
+$|\Delta\text{DP}|$ \^{a}ge  & 0.104 & 0.046 & 0.020 & 0.202 \\
+$|\Delta\text{EO}|$ \^{a}ge  & 0.086 & 0.048 & 0.018 & 0.194 \\
 \bottomrule
 \end{tabular}
-\caption{D\'{e}gradation sous perturbation (seed 43).}
+\caption{Intervalles de confiance bootstrap (B=200, IC 95\,\%).}
 \end{table}
 
-\begin{itemize}
-    \item \textbf{Corr\'{e}lation des scores} : $r \approx 0.97$ entre scores clean et perturb\'{e}s.
-    \item \textbf{D\'{e}gradation AUC} : moins d'1 point --- tr\`{e}s mod\'{e}r\'{e}e.
-    \item \textbf{ECE} : l\'{e}g\`{e}rement r\'{e}duit (la perturbation a un effet de r\'{e}gularisation).
-    \item Les mod\`{e}les fair sont \textbf{aussi robustes} que le baseline.
-\end{itemize}
+\subsection{Calibration et Platt scaling}
 
-\subsection{Diagramme de calibration}
+L'\textbf{ECE} mesure l'\'{e}cart entre confiance pr\'{e}dite et fr\'{e}quence r\'{e}elle :
+$\text{ECE} = \sum_b \frac{|B_b|}{n} |\text{acc}(B_b) - \text{conf}(B_b)|$.
 
-Le notebook affiche les \textbf{reliability diagrams} c\^{o}te \`{a} c\^{o}te (clean vs perturb\'{e}). Chaque barre repr\'{e}sente un bin de confiance : si le mod\`{e}le est bien calibr\'{e}, les barres suivent la diagonale.
+\begin{table}[H]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Mod\`{e}le} & \textbf{ECE} \\
+\midrule
+Baseline (R\'{e}gression logistique) & 0.082 \\
+Recalibr\'{e} (Platt scaling, \texttt{CalibratedClassifierCV}) & 0.080 \\
+\bottomrule
+\end{tabular}
+\caption{Calibration : ECE avant/apr\`{e}s Platt scaling.}
+\end{table}
 
 \begin{leconbox}[Le\c{c}on]
-Les corrections d'\'{e}quit\'{e} (reweighing, seuils par groupe) \textbf{n'amplifient pas la fragilit\'{e}}. Le mod\`{e}le lin\'{e}aire est naturellement robuste aux petites perturbations, et cette propri\'{e}t\'{e} est pr\'{e}serv\'{e}e.
+\textbf{L'IC95\,\% de $|\Delta\text{DP}|$ \^{a}ge s'\'{e}tend de 0.02 \`{a} 0.20.} Le biais empirique de 0.125 est dans cet intervalle, mais l'incertitude est tr\`{e}s large (test de 200) $\Rightarrow$ \textbf{prudence m\'{e}thodologique}. Sur ce dataset, les \'{e}carts d'\'{e}quit\'{e} ne sont pas significatifs \`{a} un niveau pr\'{e}cis. La r\'{e}gression logistique est par ailleurs naturellement bien calibr\'{e}e (gain marginal du Platt scaling).
 \end{leconbox}
 
 % ══════════════════════════════════════════════════════════════════════════════
@@ -704,21 +767,21 @@ Les corrections d'\'{e}quit\'{e} (reweighing, seuils par groupe) \textbf{n'ampli
 \label{sec:conclusion}
 
 \begin{questionbox}[\'{E}tape 11 --- Quelles le\c{c}ons tirer ?]
-Le parcours complet nous enseigne six le\c{c}ons fondamentales, qui relient les trois piliers du cours (\'{e}quit\'{e}, interpr\'{e}tabilit\'{e}, robustesse).
+Le parcours complet nous enseigne six le\c{c}ons fondamentales, qui relient les trois piliers du cours (\'{e}quit\'{e}, interpr\'{e}tabilit\'{e}, quantification d'incertitude).
 \end{questionbox}
 
 \begin{enumerate}[leftmargin=2em, itemsep=0.5em]
-    \item \textbf{Les donn\'{e}es sont biais\'{e}es.} Les taux de d\'{e}faut diff\`{e}rent entre groupes (Table~\ref{tab:bias}). Un mod\`{e}le performant reproduira ces biais --- bonne performance $\neq$ mod\`{e}le \'{e}quitable.
+    \item \textbf{Les donn\'{e}es sont biais\'{e}es sur l'\^{a}ge}, pas sur le genre. Younger 42\,\% vs older 27\,\% de d\'{e}faut, alors que le genre montre $|\Delta\text{DP}|=0.010$ apr\`{e}s retrait de \texttt{personal\_status\_sex}.
 
-    \item \textbf{Retirer l'attribut sensible ne suffit pas toujours.} Pour le genre, oui (pas de proxy fort). Pour l'\^{a}ge, non : \texttt{duration\_in\_month} encode l'\^{a}ge indirectement (proxy actif).
+    \item \textbf{Retirer l'attribut sensible ne suffit pas (approche Charlotte).} La r\'{e}gression logistique \texttt{features $\to$ \^{a}ge} a un \textbf{AUC = 0.86} : l'\^{a}ge est largement reconstructible depuis \texttt{housing}, \texttt{employment}, \texttt{job}\ldots Pour le genre, AUC = 0.69 (signal mod\'{e}r\'{e}).
 
-    \item \textbf{Le reweighing est efficace quand il y a des proxies.} Sans proxy, il ne change rien (genre). Avec proxy, il modifie r\'{e}ellement le mod\`{e}le (\^{a}ge).
+    \item \textbf{Le reweighing modifie peu le mod\`{e}le linaire} sur ce dataset. Combin\'{e} au post-processing, il r\'{e}duit $|\Delta\text{DP}|$ \^{a}ge mais cr\'{e}e des effets non triviaux sur EO.
 
-    \item \textbf{Le compromis DP/EO est in\'{e}vitable.} R\'{e}duire $|\Delta\text{DP}|$ augmente $|\Delta\text{EO}|$ (Table~\ref{tab:comparison}). C'est le th\'{e}or\`{e}me d'impossibilit\'{e} --- pas un \'{e}chec de la m\'{e}thode.
+    \item \textbf{Le compromis DP/EO est in\'{e}vitable.} Le post-processing r\'{e}duit $|\Delta\text{DP}|$ \^{a}ge (0.125 $\to$ 0.060) mais \textbf{double} $|\Delta\text{EO}|$ (0.066 $\to$ 0.135). C'est le th\'{e}or\`{e}me d'impossibilit\'{e} --- pas un \'{e}chec de la m\'{e}thode.
 
-    \item \textbf{L'interpr\'{e}tabilit\'{e} \'{e}claire l'\'{e}quit\'{e}.} SHAP + corr\'{e}lation = d\'{e}tection de proxies. Sans cette analyse, on ne comprendrait pas pourquoi le reweighing fonctionne pour un attribut et pas l'autre.
+    \item \textbf{L'interpr\'{e}tabilit\'{e} \'{e}claire l'\'{e}quit\'{e}.} SHAP + permutation + r\'{e}gression sur l'attribut sensible = d\'{e}tection multi-niveaux des proxies.
 
-    \item \textbf{Le mod\`{e}le est robuste}, m\^{e}me apr\`{e}s corrections. Corr\'{e}lation $r \approx 0.97$, d\'{e}gradation mod\'{e}r\'{e}e, ECE stable.
+    \item \textbf{L'incertitude statistique est large.} L'IC95\,\% bootstrap de $|\Delta\text{DP}|$ \^{a}ge va de \textbf{0.02 \`{a} 0.20}. Sur un dataset de 1000 lignes, les conclusions sur l'\'{e}quit\'{e} doivent \^{e}tre nuanc\'{e}es par l'incertitude.
 \end{enumerate}
 
 \vspace{0.5em}
@@ -732,17 +795,17 @@ Le parcours complet nous enseigne six le\c{c}ons fondamentales, qui relient les 
 ]
 \node[pillar, fill=fair!15] (eq) {\'{E}quit\'{e}};
 \node[pillar, fill=neutral!15, right=2.5cm of eq] (interp) {Interpr\'{e}tabilit\'{e}};
-\node[pillar, fill=accent!15, below right=1.2cm and 1.25cm of eq] (rob) {Robustesse};
+\node[pillar, fill=accent!15, below right=1.2cm and 1.25cm of eq] (rob) {Incertitude};
 
 \draw[link] (eq) -- node[above, font=\scriptsize, text=gray] {proxies} (interp);
-\draw[link] (eq) -- node[left, font=\scriptsize, text=gray, pos=0.4] {stabilit\'{e}} (rob);
+\draw[link] (eq) -- node[left, font=\scriptsize, text=gray, pos=0.4] {IC bootstrap} (rob);
 \draw[link] (interp) -- node[right, font=\scriptsize, text=gray, pos=0.4] {confiance} (rob);
 \end{tikzpicture}
 \end{center}
 
 \vspace{0.3em}
 \begin{center}
-\small\textit{Les trois piliers sont interd\'{e}pendants : l'interpr\'{e}tabilit\'{e} r\'{e}v\`{e}le les probl\`{e}mes d'\'{e}quit\'{e},\\la robustesse garantit que les corrections sont fiables.}
+\small\textit{Les trois piliers sont interd\'{e}pendants : l'interpr\'{e}tabilit\'{e} r\'{e}v\`{e}le les probl\`{e}mes d'\'{e}quit\'{e},\\la quantification d'incertitude pr\'{e}cise la confiance qu'on peut leur accorder.}
 \end{center}
 
 \subsection*{Arbre de d\'{e}cision : que faire selon la situation ?}
@@ -778,6 +841,6 @@ Le parcours complet nous enseigne six le\c{c}ons fondamentales, qui relient les 
 \vspace{1em}
 \hrule
 \vspace{0.5em}
-\small\noindent\textit{Code from scratch --- numpy et pandas uniquement.}
+\small\noindent\textit{Code : \texttt{scikit-learn} + \texttt{fairlearn} + \texttt{shap}, reproductibilit\'{e} via \texttt{papermill}.}
 
 \end{document}

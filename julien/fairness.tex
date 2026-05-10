@@ -19,7 +19,7 @@
 \definecolor{neutral}{HTML}{FF9800}
 
 \title{IA Responsable : German Credit Dataset}
-\subtitle{\'Equit\'e, Interpr\'etabilit\'e \& Robustesse}
+\subtitle{\'Equit\'e, Interpr\'etabilit\'e \& Quantification d'incertitude}
 \author{IA708 -- T\'el\'ecom Paris}
 \date{2026}
 
@@ -172,7 +172,7 @@ l'information sensible. On le v\'erifiera via SHAP.
 \node[block, fill=fair!15, below=1cm of data] (rw) {Reweighing\newline pr\'e-trait.};
 \node[block, fill=fair!15, right=of rw] (pp) {Seuils/groupe\newline post-trait.};
 \node[block, fill=neutral!15, right=of pp] (shap) {SHAP\newline proxies?};
-\node[block, fill=alertc!15, right=of shap] (rob) {Perturbation\newline ECE};
+\node[block, fill=alertc!15, right=of shap] (rob) {Bootstrap\newline IC 95\%};
 
 \draw[arrow] (data) -- (eda);
 \draw[arrow] (eda) -- (prep);
@@ -190,7 +190,7 @@ l'information sensible. On le v\'erifiera via SHAP.
 \end{tikzpicture}
 
 \vspace{0.5em}
-\small Tout cod\'e \emph{from scratch} (numpy/pandas, sans scikit-learn).
+\small Stack : \texttt{scikit-learn} + \texttt{fairlearn} + \texttt{shap}, reproductibilit\'e via \texttt{papermill}.
 \end{frame}
 
 \begin{frame}{Mod\`ele de base}
@@ -202,17 +202,18 @@ $P(\text{d\'efaut}=1 \mid x) = \sigma(w^\top x + b)$
 \begin{column}{0.48\textwidth}
 \textbf{Entra\^inement}
 \begin{itemize}
-    \item Adam ($\text{lr}=0.03$), L2 ($\lambda=0.01$)
-    \item Early stopping (patience 300)
-    \item Seuil : max balanced accuracy (val)
+    \item \texttt{sklearn.LogisticRegression}, solver \texttt{liblinear}, $C{=}1$
+    \item L2 r\'egularis\'ee, \texttt{max\_iter}\,=\,1000
+    \item Convergence v\'erifi\'ee : log-loss val 0.56 d\`es 10 it\'erations (seuil $\sim$0.5 attendu)
+    \item Seuil : max balanced accuracy (val) $\to$ $\tau{=}0.18$
 \end{itemize}
 \end{column}
 \begin{column}{0.48\textwidth}
-\textbf{Pr\'etraitement}
+\textbf{Pr\'etraitement (\texttt{ColumnTransformer})}
 \begin{itemize}
-    \item z-score (num.) + one-hot (cat.)
-    \item $\sim$44 features apr\`es encodage
-    \item Genre et \^age retir\'es
+    \item \texttt{StandardScaler} (num.) + \texttt{OneHotEncoder} (cat.)
+    \item 56 features apr\`es encodage
+    \item Genre et \^age retir\'es (choix initial)
 \end{itemize}
 \end{column}
 \end{columns}
@@ -238,10 +239,10 @@ $= \frac{1}{2}(\text{TPR} + \text{TNR})$, et \textbf{ECE} (calibration).
 \toprule
 & S\'election & TPR \\
 \midrule
-Homme & 0.406 & 0.697 \\
-Femme & 0.500 & 0.741 \\
+Homme & 0.633 & 0.85 \\
+Femme & 0.623 & 0.90 \\
 \midrule
-$|\Delta|$ & \textbf{0.094} & 0.044 \\
+$|\Delta|$ & 0.010 & 0.058 \\
 \bottomrule
 \end{tabular}
 \end{column}
@@ -252,10 +253,10 @@ $|\Delta|$ & \textbf{0.094} & 0.044 \\
 \toprule
 & S\'election & TPR \\
 \midrule
-Adulte & 0.425 & 0.767 \\
-Jeune & 0.506 & 0.588 \\
+Older & 0.603 & 0.85 \\
+Younger & 0.727 & 0.90 \\
 \midrule
-$|\Delta|$ & 0.081 & \textbf{0.179} \\
+$|\Delta|$ & \textbf{0.125} & 0.066 \\
 \bottomrule
 \end{tabular}
 \end{column}
@@ -263,9 +264,7 @@ $|\Delta|$ & 0.081 & \textbf{0.179} \\
 
 \vspace{0.5em}
 \normalsize
-\textbf{Analyse} : le baseline pr\'esente des \'ecarts mesurables.
-Le |EO gap| pour l'\^age (0.179) est pr\'eoccupant : les jeunes d\'efaillants
-sont moins bien d\'etect\'es. $\Rightarrow$ \textbf{correction n\'ecessaire.}
+\textbf{Analyse} : sur le \textbf{genre}, biais quasi-nul une fois \texttt{personal\_status\_sex} retir\'e ; sur l'\textbf{\^age}, $|\Delta\text{DP}|=0.125$ persiste car les taux de d\'efaut diff\`erent (younger 42\,\% vs older 27\,\%). $\Rightarrow$ \textbf{correction n\'ecessaire pour l'\^age}.
 \end{frame}
 
 % ═══════════════════════════════════════════════════════════════════════════
@@ -353,13 +352,15 @@ Peu de donn\'ees de calibration $\Rightarrow$ bruit.
 \toprule
 \textbf{Attr.} & \textbf{Config.} & \textbf{AUC} & \textbf{BalAcc} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ \\
 \midrule
-Genre & Baseline          & 0.793 & 0.701 & 0.094 & 0.044 \\
-Genre & Reweighing        & 0.793 & 0.701 & 0.094 & 0.044 \\
-Genre & Reweighing + PP   & 0.793 & 0.727 & 0.238 & 0.192 \\
+Genre & Baseline          & 0.785 & 0.669 & 0.010 & 0.058 \\
+Genre & Reweighing        & 0.785 & 0.665 & 0.006 & 0.050 \\
+Genre & Baseline + PP     & 0.785 & 0.669 & 0.105 & 0.196 \\
+Genre & Reweighing + PP   & 0.785 & 0.669 & 0.128 & 0.230 \\
 \midrule
-\^Age  & Baseline          & 0.793 & 0.701 & 0.081 & 0.179 \\
-\^Age  & Reweighing        & 0.789 & 0.713 & 0.081 & 0.202 \\
-\^Age  & Reweighing + PP   & 0.789 & 0.712 & \textbf{0.056} & 0.261 \\
+\^Age  & Baseline          & 0.785 & 0.669 & 0.125 & 0.066 \\
+\^Age  & Reweighing        & 0.784 & 0.640 & 0.132 & 0.098 \\
+\^Age  & Baseline + PP     & 0.785 & 0.644 & \textbf{0.060} & \textbf{0.135} \\
+\^Age  & Reweighing + PP   & 0.784 & 0.650 & 0.069 & 0.221 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -367,9 +368,8 @@ Genre & Reweighing + PP   & 0.793 & 0.727 & 0.238 & 0.192 \\
 \vspace{0.3em}
 \textbf{Analyse :}
 \begin{itemize}
-    \item \textbf{Genre} : reweighing \textbf{sans effet} $\Rightarrow$ proxies faibles
-    \item \textbf{\^Age} : reweighing + PP r\'eduit $|\Delta\text{DP}|$ (0.081 $\to$ \textbf{0.056})
-    \item Mais $|\Delta\text{EO}|$ augmente (0.179 $\to$ 0.261)
+    \item \textbf{Genre} : biais initial n\'egligeable, le PP \textbf{cr\'ee} un biais artificiel (val=200 trop petit)
+    \item \textbf{\^Age} : PP r\'eduit $|\Delta\text{DP}|$ (0.125 $\to$ \textbf{0.060}) mais \textbf{double} $|\Delta\text{EO}|$ (0.066 $\to$ 0.135)
           $\Rightarrow$ \textbf{th\'eor\`eme d'impossibilit\'e en action}
 \end{itemize}
 \end{frame}
@@ -385,87 +385,105 @@ Pour un mod\`ele lin\'eaire, les \textbf{valeurs de Shapley} sont exactes :
 $$\phi_i(x) = w_i \cdot \left(x_i - \mathbb{E}_{\text{train}}[x_i]\right)$$
 
 \vspace{0.3em}
-\textbf{Top 5 features} (SHAP baseline) :
+\textbf{Top 5 features} (SHAP baseline, via \texttt{shap.LinearExplainer}) :
 \begin{enumerate}
     \item \texttt{checking\_status} --- compte courant
-    \item \texttt{duration\_in\_month} --- dur\'ee du cr\'edit
-    \item \texttt{credit\_amount} --- montant
     \item \texttt{credit\_history} --- historique
+    \item \texttt{installment\_rate} --- taux d'\'ech\'eance
     \item \texttt{savings\_account\_bonds} --- \'epargne
+    \item \texttt{purpose}, \texttt{credit\_amount}, \texttt{duration\_in\_month}
 \end{enumerate}
 
 \vspace{0.3em}
-Compl\'et\'e par l'\textbf{importance par permutation} (chute d'AUC quand on m\'elange une colonne). Les deux m\'ethodes convergent.
+Compl\'et\'e par l'\textbf{importance par permutation} (\texttt{sklearn.inspection.permutation\_importance}, chute d'AUC quand on m\'elange une colonne). Les deux m\'ethodes convergent sur le top.
 \end{frame}
 
-\begin{frame}{D\'etection de proxies}
-\textbf{Question} : des features encodent-elles indirectement le genre ou l'\^age ?
+\begin{frame}{D\'etection de proxies (approche Charlotte)}
+\textbf{Question} : peut-on pr\'edire l'attribut sensible \`a partir des autres features ?
+
+\vspace{0.3em}
+\textbf{M\'ethode} : r\'egression logistique \texttt{features $\to$ attribut sensible}, AUC mesure le signal proxy multivari\'e.
+
+\vspace{0.3em}
+\centering
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{lcl}
+\toprule
+\textbf{Attribut} & \textbf{AUC proxy} & \textbf{Interpr\'etation} \\
+\midrule
+Genre & 0.69 & signal proxy mod\'er\'e \\
+\^Age & \textcolor{alertc!80!black}{\textbf{0.86}} & \textcolor{alertc!80!black}{\textbf{tr\`es fortement reconstructible}} \\
+\bottomrule
+\end{tabular}
 
 \vspace{0.5em}
-\begin{columns}[T]
-\begin{column}{0.48\textwidth}
-\textbf{\textcolor{accent}{Genre}}
-\begin{itemize}
-    \item Aucune feature \`a la fois influente ET corr\'el\'ee au genre
-    \item \textbf{Proxies faibles}
-    \item $\Rightarrow$ Retirer l'attribut suffit
-    \item Coh\'erent avec le reweighing sans effet
-\end{itemize}
-\end{column}
-\begin{column}{0.48\textwidth}
-\textbf{\textcolor{fair}{\^Age}}
-\begin{itemize}
-    \item \texttt{duration\_in\_month} : corr\'el\'e \`a l'\^age ($|r| > 0.15$)
-          ET important (top 2 SHAP)
-    \item \textbf{Proxy actif}
-    \item $\Rightarrow$ Le mod\`ele ``voit'' l'\^age m\^eme sans la colonne
-    \item Explique pourquoi le reweighing a un effet pour l'\^age
-\end{itemize}
-\end{column}
-\end{columns}
+\begin{alertblock}{Le\c{c}on}
+Retirer \texttt{age\_in\_years} ne suffit pas \`a \og cacher \fg{} l'\^age : il est encod\'e dans \texttt{housing}, \texttt{employment}, \texttt{job}\ldots
 
-\vspace{0.5em}
-\begin{block}{Le\c{c}on}
-Retirer l'attribut sensible $\neq$ \'equit\'e. L'interpr\'etabilit\'e permet
-de d\'etecter la discrimination indirecte via les proxies.
-\end{block}
+\textbf{Recommandation Charlotte :} ne pas retirer les attributs sensibles, les utiliser explicitement comme pond\'erations (\textit{fairness through awareness}).
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{SHAP : avant vs apr\`es retrait des attributs sensibles}
+\centering
+\includegraphics[width=0.92\linewidth]{../outputs/08_shap_compare.png}
+
+\vspace{0.2em}
+\scriptsize \textbf{Co\^ut performance} : AUC avec = 0.781, AUC sans = 0.785, retrait quasi gratuit. \quad \textbf{Top absorbantes} : \texttt{present\_employment\_since} (+0.036), \texttt{telephone} (+0.022), \texttt{credit\_history} (+0.020).
+
+\smallskip
+\textbf{\small Le\c{c}on :} l'effet se \textbf{redistribue} aux proxies. SHAP rend visible ce que l'AUC proxy = 0.86 mesure num\'eriquement.
 \end{frame}
 
 % ═══════════════════════════════════════════════════════════════════════════
-\section{Robustesse}
+\section{Quantification d'incertitude}
 
-\begin{frame}{Perturbation et calibration}
-\textbf{Question} : le mod\`ele r\'esiste-t-il au bruit ?
+\begin{frame}{Bootstrap (substitut \`a la robustesse adversariale)}
+\textbf{Choix m\'ethodologique} (feedback Charlotte) : la robustesse adversariale est remplac\'ee par une \textbf{quantification d'incertitude par bootstrap} (cf. cours \textit{Robustness and Uncertainty}).
 
-\vspace{0.5em}
+\vspace{0.3em}
 \begin{columns}[T]
 \begin{column}{0.48\textwidth}
 \textbf{Protocole}
 \begin{itemize}
-    \item Num\'eriques : $x_j + \varepsilon$, $\varepsilon \sim \mathcal{N}(0,\, 0.2 \cdot \sigma_j)$
-    \item Cat\'egoriels : swap al\'eatoire ($p{=}0.1$)
+    \item $B = 200$ mod\`eles entra\^in\'es sur des \'echantillons tir\'es avec remplacement
+    \item Quantiles 2.5\,\%/97.5\,\% des $B$ valeurs $\to$ IC95\,\%
+    \item Sur AUC, |DP|, |EO|, et scores individuels
 \end{itemize}
-
-\vspace{0.5em}
-\textbf{ECE} (cours incertitude) :
-$\text{ECE} = \sum_{b} \frac{|B_b|}{n} |\text{acc}_b - \text{conf}_b|$
-
-Mesure l'\'ecart confiance / pr\'ecision r\'eelle.
 \end{column}
 \begin{column}{0.48\textwidth}
 \textbf{R\'esultats}
 \begin{itemize}
-    \item Corr\'elation scores $r \approx 0.97$
-    \item $\Delta$AUC $\approx$ --0.6 points
-    \item ECE stable ($\sim$0.05)
-    \item Mod\`eles fair \textbf{aussi robustes}
+    \item AUC : 0.764 \textbf{[0.72, 0.80]}
+    \item $|\Delta\text{DP}|$ \^age : 0.10 \textbf{[0.02, 0.20]}
+    \item $|\Delta\text{EO}|$ \^age : 0.09 \textbf{[0.02, 0.19]}
 \end{itemize}
-
-\vspace{0.5em}
-$\Rightarrow$ Mod\`ele \textbf{stable}. \\
-Les corrections d'\'equit\'e n'amplifient pas la fragilit\'e.
 \end{column}
 \end{columns}
+
+\vspace{0.5em}
+\begin{alertblock}{Lecture critique}
+Sur 1000 lignes, les IC sur les biais d\'epassent 0.15 $\Rightarrow$ \textbf{prudence statistique}, les conclusions de discrimination doivent \^etre nuanc\'ees.
+\end{alertblock}
+\end{frame}
+
+\begin{frame}{Calibration : ECE et Platt scaling}
+\textbf{ECE} (cours \textit{Robustness and Uncertainty}) :
+$\text{ECE} = \sum_{b} \frac{|B_b|}{n} |\text{acc}_b - \text{conf}_b|$
+
+\vspace{0.5em}
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Mod\`ele} & \textbf{ECE} \\
+\midrule
+Baseline (R\'eg.\ logist.) & 0.082 \\
+Platt scaling (\texttt{CalibratedClassifierCV}) & 0.080 \\
+\bottomrule
+\end{tabular}
+
+\vspace{0.5em}
+$\Rightarrow$ La r\'egression logistique est \textbf{naturellement bien calibr\'ee}, le gain marginal du Platt scaling est minime.
 \end{frame}
 
 % ═══════════════════════════════════════════════════════════════════════════
@@ -473,29 +491,22 @@ Les corrections d'\'equit\'e n'amplifient pas la fragilit\'e.
 
 \begin{frame}{Ce qu'on a appris}
 \begin{enumerate}
-    \item \textbf{Les donn\'ees sont biais\'ees} : taux de d\'efaut diff\'erents entre groupes
-          $\Rightarrow$ un bon mod\`ele reproduira ces biais.
+    \item \textbf{Les donn\'ees sont biais\'ees sur l'\^age} (younger 42\,\% vs older 27\,\% de d\'efaut), pas sur le genre apr\`es retrait de \texttt{personal\_status\_sex}.
 
-    \item \textbf{Retirer l'attribut sensible ne suffit pas toujours} :
-          pour le genre oui (proxies faibles), pour l'\^age non
-          (\texttt{duration\_in\_month} = proxy actif).
+    \item \textbf{Retirer l'attribut sensible ne suffit pas} : la r\'egression logistique \texttt{features $\to$ \^age} a un \textbf{AUC = 0.86}. L'\^age est largement encod\'e dans les autres variables (\texttt{housing}, \texttt{employment}\ldots).
 
-    \item \textbf{Le reweighing est efficace quand il y a des proxies} :
-          sans proxy, il ne change rien.
+    \item \textbf{Compromis DP/EO in\'evitable} : sur l'\^age, le post-processing r\'eduit $|\Delta\text{DP}|$ (0.125 $\to$ 0.060) mais \textbf{double} $|\Delta\text{EO}|$ (0.066 $\to$ 0.135). Th\'eor\`eme d'impossibilit\'e.
 
-    \item \textbf{Compromis DP/EO in\'evitable} :
-          r\'eduire $|\Delta\text{DP}|$ augmente $|\Delta\text{EO}|$
-          (th\'eor\`eme d'impossibilit\'e).
+    \item \textbf{L'interpr\'etabilit\'e \'eclaire l'\'equit\'e} : SHAP + permutation + r\'egression sur l'attribut sensible = d\'etection multi-niveaux des proxies.
 
-    \item \textbf{L'interpr\'etabilit\'e \'eclaire l'\'equit\'e} :
-          SHAP + corr\'elation = d\'etection de proxies.
+    \item \textbf{Bootstrap = robustesse statistique} : IC95\,\% large sur les biais (0.02 \`a 0.20 pour $|\Delta\text{DP}|$ \^age) $\Rightarrow$ prudence m\'ethodologique.
 
-    \item \textbf{Le mod\`ele est robuste} au bruit, m\^eme apr\`es corrections.
+    \item \textbf{Recommandation Charlotte :} pour aller plus loin, conserver l'attribut sensible et appliquer une mitigation explicite (\textit{fairness through awareness}, \texttt{ExponentiatedGradient}, transport optimal).
 \end{enumerate}
 
-\vspace{0.5em}
+\vspace{0.4em}
 \centering\small
-\textit{Tout cod\'e from scratch (numpy/pandas, sans scikit-learn).}
+\textit{Stack : \texttt{scikit-learn} + \texttt{fairlearn} + \texttt{shap}, reproductibilit\'e via \texttt{papermill}.}
 \end{frame}
 
 \end{document}

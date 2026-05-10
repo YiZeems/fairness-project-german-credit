@@ -291,6 +291,23 @@ Retirer \texttt{age\_in\_years} ne suffit pas \`a "cacher" l'\^age : il est enco
 \end{alertblock}
 \end{frame}
 
+% ------------------------------------------------------------------------------
+\begin{frame}{9. SHAP : avant vs apr\`es retrait des attributs sensibles}
+\img[0.95\linewidth]{08_shap_compare.png}
+\vfill
+\begin{columns}[T]
+\column{0.45\linewidth}
+\begin{exampleblock}{Co\^ut en performance, n\'egligeable}
+\small AUC avec : \textbf{0.781} \quad vs \quad AUC sans : \textbf{0.785}.
+Retrait quasi gratuit en performance.
+\end{exampleblock}
+\column{0.5\linewidth}
+\begin{alertblock}{L'effet se redistribue aux proxies}
+\small Top absorbantes : \texttt{present\_employment\_since} (+0.036), \texttt{telephone} (+0.022), \texttt{credit\_history} (+0.020). SHAP confirme num\'eriquement le proxy AUC = 0.86 pour l'\^age.
+\end{alertblock}
+\end{columns}
+\end{frame}
+
 % ==============================================================================
 \section{Quantification d'incertitude}
 
