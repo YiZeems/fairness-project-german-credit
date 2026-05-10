@@ -3,7 +3,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
 \usepackage[french]{babel}
-\usepackage[margin=1.6cm]{geometry}
+\usepackage[margin=1.4cm,top=1.3cm,bottom=1.3cm]{geometry}
 \usepackage{amsmath, amssymb}
 \usepackage{booktabs}
 \usepackage{enumitem}
@@ -13,6 +13,9 @@
 \usepackage{graphicx}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta, positioning, shapes.geometric}
+\usepackage[hidelinks]{hyperref}
+\usepackage{multicol}
+\usepackage{float}
 
 \setlength{\parskip}{0.2em}
 \setlength{\parindent}{0pt}
@@ -78,6 +81,8 @@ Pour la r\'egression logistique, $\phi_i(x) = w_i (x_i - \mathbb{E}[x_i])$ est e
 
 \paragraph{Proxies multivari\'es.} Suivant la recommandation de C.~Laclau, on entra\^ine une r\'egression logistique \texttt{features $\to$ attribut sensible} : \textbf{AUC = 0.86 pour l'\^age}, AUC = 0.69 pour le genre. L'attribut sensible est largement reconstructible depuis les autres features. \textbf{Cons\'equence} : retirer l'attribut sensible des inputs ne suffit pas \`a garantir l'\'equit\'e ; les m\'ethodes "fairness through awareness" (le conserver pour mitiger explicitement) seraient th\'eoriquement plus efficaces.
 
+\paragraph{SHAP avant vs apr\`es retrait.} Mod\`ele \textbf{avec} attributs sensibles : AUC=0.781 ; \textbf{sans} (baseline) : AUC=0.785 ($\Delta$ n\'egligeable). $\Delta$ Mean |SHAP| (sans $-$ avec) montre que les features absorbent l'effet : \texttt{present\_employment\_since} (+0.036), \texttt{telephone} (+0.022), \texttt{credit\_history} (+0.020). Confirmation graphique de l'AUC proxy=0.86 (figure dans le notebook et le beamer).
+
 \section{Quantification d'incertitude (substitut \`a la robustesse adversariale)}
 
 Sur conseil de l'enseignante, la robustesse a \'et\'e remplac\'ee par une \textbf{quantification d'incertitude par bootstrap} (cf. cours \textit{Robustness and Uncertainty}). On entra\^ine $B = 200$ mod\`eles sur des \'echantillons tir\'es avec remplacement, et on calcule des intervalles de confiance bootstrap sur toutes les m\'etriques :
@@ -110,10 +115,16 @@ L'effet des corrections d'\'equit\'e d\'epend fortement de la structure des prox
 
 \textbf{Outils d'assistance.} Des LLM (Claude, GPT) ont \'et\'e utilis\'es pour l'aide \`a la r\'edaction du code (pipeline \texttt{sklearn}, int\'egration \texttt{fairlearn}/\texttt{shap}) et la structuration. Toutes les d\'ecisions m\'ethodologiques (choix des m\'etriques, interpr\'etation, conception du bootstrap) ont \'et\'e prises et discut\'ees en \'equipe.
 
-\begin{thebibliography}{9}
-\bibitem{chouldechova2017} A.~Chouldechova, \textit{Fair prediction with disparate impact: A study of bias in recidivism prediction instruments}, Big Data, 5(2), 2017.
-\bibitem{kleinberg2016} J.~Kleinberg, S.~Mullainathan, M.~Raghavan, \textit{Inherent trade-offs in the fair determination of risk scores}, ITCS, 2017.
-\bibitem{lundberg2017} S.~Lundberg, S.-I.~Lee, \textit{A Unified Approach to Interpreting Model Predictions}, NeurIPS, 2017.
-\end{thebibliography}
+\paragraph{\small Références} {\scriptsize
+A.~Chouldechova, \textit{Fair prediction with disparate impact}, Big Data 5(2), 2017, \href{https://arxiv.org/abs/1703.00056}{arXiv:1703.00056}\,;
+J.~Kleinberg et al., \textit{Inherent trade-offs in the fair determination of risk scores}, ITCS 2017, \href{https://arxiv.org/abs/1609.05807}{arXiv:1609.05807}\,;
+S.~Lundberg, S.-I.~Lee, \textit{A Unified Approach to Interpreting Model Predictions}, NeurIPS 2017, \href{https://arxiv.org/abs/1705.07874}{arXiv:1705.07874} (Linear SHAP, Corollary~1, p.~6)\,;
+F.~Kamiran, T.~Calders, \textit{Data preprocessing techniques for classification without discrimination}, KAIS 33(1), 2012, \href{https://doi.org/10.1007/s10115-011-0463-8}{doi:10.1007/s10115-011-0463-8}\,;
+R.~K.~E.~Bellamy et al., \textit{AI Fairness 360}, IBM 2018, \href{https://arxiv.org/abs/1810.01943}{arXiv:1810.01943}\,;
+M.~Hardt, E.~Price, N.~Srebro, \textit{Equality of Opportunity in Supervised Learning}, NeurIPS 2016, \href{https://arxiv.org/abs/1610.02413}{arXiv:1610.02413}\,;
+B.~Efron, \textit{Bootstrap methods}, Annals of Statistics 7(1), 1979, \href{https://doi.org/10.1214/aos/1176344552}{doi:10.1214/aos/1176344552}\,;
+C.~Guo et al., \textit{On Calibration of Modern Neural Networks}, ICML 2017, \href{https://arxiv.org/abs/1706.04599}{arXiv:1706.04599}\,;
+S.~Bird et al., \textit{Fairlearn}, Microsoft 2020, \href{https://fairlearn.org/}{fairlearn.org}.
+}
 
 \end{document}
