@@ -1,713 +1,234 @@
-# German Credit — Responsible AI Pipeline
+# German Credit - IA responsable
 
-> **Course:** IADATA708 — Machine Learning Equitable et Interpretable  
-> **Institution:** Télécom Paris — Mastère Spécialisé IA Multimodale  
-> **Dataset:** UCI Statlog German Credit (1 000 observations, 20 attributes)
+Ce dépôt regroupe un projet de scoring de crédit sur le dataset UCI German Credit. Le travail est organisé autour de trois questions:
 
----
+- comment obtenir un modèle utile sur un dataset tabulaire déséquilibré;
+- comment mesurer et corriger les écarts d'équité entre groupes;
+- comment expliquer les décisions et encadrer l'incertitude.
 
-## Table of contents
+Le coeur du projet est dans `julien/`. Le dépôt est notebook-first: le notebook et le rapport PDF sont les deux points d'entrée principaux.
 
-1. [Project overview](#1-project-overview)
-2. [Scientific context and motivations](#2-scientific-context-and-motivations)
-3. [Dataset](#3-dataset)
-4. [ML architecture — baseline model](#4-ml-architecture--baseline-model)
-5. [Fairness theory and methods](#5-fairness-theory-and-methods)
-6. [Interpretability theory and methods](#6-interpretability-theory-and-methods)
-7. [Robustness evaluation](#7-robustness-evaluation)
-8. [Results and analysis](#8-results-and-analysis)
-9. [Design decisions](#9-design-decisions)
-10. [Project structure](#10-project-structure)
-11. [Installation and usage](#11-installation-and-usage)
-12. [Outputs reference](#12-outputs-reference)
-13. [Dependencies](#13-dependencies)
-14. [Known limitations](#14-known-limitations)
-15. [Formula variable glossary](#15-formula-variable-glossary)
+## A lire en premier
 
----
+- `julien/responsiveAI-german-credit_light.ipynb` : notebook principal.
+- `julien/responsiveAI-german-credit_rapport.pdf` : rapport compilé.
+- `julien/responsiveAI-german-credit_rapport.tex` : source LaTeX du rapport.
+- `julien/requirements.txt` : dépendances Python pour rejouer le notebook.
 
-## 1. Project overview
+## Arborescence utile
 
-This project implements a complete **Responsible AI (RAI) pipeline** for credit risk classification. Starting from a raw dataset, it covers every stage of a fairness-aware ML workflow:
-
-- **Baseline** — train a logistic regression classifier and evaluate performance
-- **Fairness** — detect and mitigate bias with two complementary interventions (pre-processing and post-processing)
-- **Interpretability** — explain predictions globally with exact linear SHAP and permutation importance
-- **Robustness** — stress-test all models under controlled feature perturbations
-
-All components are implemented from scratch (no scikit-learn) to make every algorithmic choice explicit and auditable. The pipeline is reproducible end-to-end via a single CLI command.
-
----
-
-## 2. Scientific context and motivations
-
-### Why fairness in credit scoring?
-
-Automated credit decisions directly affect individuals' financial lives. Historically, credit scoring systems have been shown to discriminate along gender, age, ethnicity, and other sensitive attributes — sometimes as a direct consequence of historical patterns in training data, sometimes through proxy variables that correlate with protected characteristics.
-
-Two legal/ethical frameworks motivate the fairness criteria used in this project:
-
-| Framework | Fairness criterion | Intuition |
-|---|---|---|
-| Anti-classification | Do not use the protected attribute as input | Minimal but insufficient alone |
-| Demographic parity | Equal selection rates across groups | "Equal outcomes" |
-| Equal opportunity | Equal true positive rates across groups | "Equal access to credit for creditworthy applicants" |
-| Equalized odds | Equal TPR **and** FPR across groups | Strictest, often incompatible with accuracy |
-
-### Why interpretability?
-
-Beyond regulatory requirements (GDPR right to explanation), interpretability serves three purposes in this project:
-
-1. **Debugging** — verify that the model relies on legitimate signals, not protected proxies
-2. **Trust** — allow domain experts to validate predictions
-3. **Fairness auditing** — identify which features drive disparate predictions between groups
-
-### Why robustness?
-
-A model that is fair and interpretable on the test set but sensitive to small input perturbations provides weak real-world guarantees. Robustness testing checks whether fairness properties are stable when data quality degrades (noise, measurement error, category misclassification).
-
----
-
-## 3. Dataset
-
-- **Source:** UCI Machine Learning Repository — Statlog (German Credit Data)
-- **Auto-download:** the pipeline fetches the raw file if not present (`--download-if-missing`)
-- **Size:** 1 000 observations × 20 original attributes
-- **Target:** `default` (binary)
-  - `1` = bad credit risk (positive class, ~30 % of data)
-  - `0` = good credit risk (negative class, ~70 % of data)
-
-### Sensitive attributes
-
-| Attribute | Groups | Decision rationale |
-|---|---|---|
-| **Gender** | Female / Male (inferred from `personal_status`) | Gender is a paradigmatic protected attribute in credit law |
-| **Age** | Young (< threshold) / Older (≥ threshold, default 25) | Age discrimination is common in automated scoring |
-
-Gender was chosen as the primary sensitive attribute because the dataset documentation explicitly flags `personal_status` as a potential source of gender bias and it produces clearer group imbalances than age at the default threshold.
-
-### Data split
-
-| Split | Proportion | Stratified |
-|---|---|---|
-| Train | 60 % | Yes (on target) |
-| Validation | 20 % | Yes |
-| Test | 20 % | Yes |
-
-Stratification is critical here because the positive class (default = 1) represents only ~30 % of examples. Without it, small splits could have substantially different class ratios, which would corrupt fairness metric estimates.
-
-### Preprocessing
-
-- **Numeric features** — z-score normalization using train-set statistics only (no leakage)
-- **Categorical features** — one-hot encoding; unknown test-set categories are silently dropped
-- **Missing values** — none in this dataset
-
----
-
-## 4. ML architecture — baseline model
-
-### Choice of model: Logistic Regression
-
-Logistic regression was selected deliberately over more powerful models (trees, neural networks) for three reasons:
-
-1. **Inherent interpretability** — coefficients map directly to log-odds contributions; SHAP values are exact and closed-form
-2. **Transparency for fairness analysis** — it is easy to trace which features drive predictions for each demographic group
-3. **Sufficient capacity** — the German Credit dataset is small (1 000 samples) and linearly separable enough for logistic regression to be competitive
-
-### Custom Adam implementation
-
-Rather than using a library optimizer, the project implements Adam from scratch to keep the full training loop auditable:
-
-```
-m_t = β₁ · m_{t-1} + (1 − β₁) · g_t          (first moment)
-v_t = β₂ · v_{t-1} + (1 − β₂) · g_t²         (second moment)
-m̂_t = m_t / (1 − β₁ᵗ)                         (bias correction)
-v̂_t = v_t / (1 − β₂ᵗ)                         (bias correction)
-θ_t = θ_{t-1} − α · m̂_t / (√v̂_t + ε)         (parameter update)
-```
-
-**Hyperparameters:**
-
-| Parameter | Value | Rationale |
-|---|---|---|
-| Learning rate α | 0.03 | Tuned on validation log-loss; higher values caused instability |
-| L2 regularization | 0.01 | Prevents overfitting on the small training set |
-| Max epochs | 3 500 | Sufficient for convergence with early stopping |
-| Early stopping patience | 300 epochs | Avoids premature stopping while preventing overfitting |
-| β₁ | 0.9 | Adam default |
-| β₂ | 0.999 | Adam default |
-
-### Threshold selection
-
-The default classification threshold is chosen to maximize **Youden's index** (balanced accuracy) on the validation set, rather than using the fixed 0.5. This is important because the class imbalance (~30/70) means 0.5 systematically under-predicts the positive class.
-
----
-
-## 5. Fairness theory and methods
-
-### Definitions
-
-Let:
-- `S` be the sensitive attribute (e.g., gender)
-- `Y` the true label (`1` = default, `0` = non-default)
-- `Ŷ` the binary model decision after thresholding
-
-In this project, `Ŷ = 1` means **"predicted default"** (risk alert), not "credit approved".
-
-**Demographic Parity Difference (DP):**
-```
-ΔDP = |P(Ŷ=1 | S=comparison) − P(Ŷ=1 | S=privileged)|
-```
-Measures whether both groups receive the same **predicted-default rate**, regardless of true labels.
-
-**Equal Opportunity Difference (EO):**
-```
-ΔEO = |TPR_comparison − TPR_privileged|
-     = |P(Ŷ=1 | Y=1, S=comparison) − P(Ŷ=1 | Y=1, S=privileged)|
-```
-Measures whether true defaulters (`Y=1`) are detected at similar rates across groups.
-
-**Average Odds Difference (AOD):**
-```
-ΔAOD = 0.5 × (|FPR_comparison − FPR_privileged| + |TPR_comparison − TPR_privileged|)
-```
-Combines both false positive and true positive rate differences — the strictest of the three metrics.
-
-**Why Equal Opportunity over Demographic Parity?**  
-With the convention used here (`Ŷ=1` = predicted default), EO compares detection parity among true defaulters, while DP enforces equal alert rates across groups regardless of base rates. As a result, optimizing DP can degrade predictive validity when base rates differ.
-
-### Method 1 — Reweighing (pre-processing)
-
-**Type:** Data-level intervention applied during training.
-
-**Mechanism:** Each training sample (xᵢ, yᵢ, sᵢ) receives a weight:
-
-```
-w(s, y) = P(S=s) · P(Y=y) / P(S=s, Y=y)
-```
-
-This reweights the joint distribution P(S, Y) toward independence, without modifying the data or the model architecture.
-
-**Why reweighing?**
-- It acts before the model sees the data, which means no changes to model training code
-- It is computationally cheap (one pass over training labels)
-- It is interpretable: the weights tell us exactly which (group, label) combinations are under- or over-represented
-- It was introduced by Kamiran & Calders (2012) and has strong theoretical grounding
-
-**Expected effect:** Reduce ΔDP and ΔEO by correcting the imbalanced representation of (group, label) combinations in training data.
-
-### Method 2 — Per-group threshold calibration (post-processing)
-
-**Type:** Decision-level intervention applied at inference time.
-
-**Mechanism:** Instead of using a single global classification threshold, the model applies a distinct threshold per sensitive group:
-
-```
-Ŷ(x) = 1  if  f(x) ≥ θ(S(x))
-```
-
-Thresholds are calibrated on the **validation set** by grid search (181 candidates from 0.05 to 0.95) to minimize either ΔDP or ΔEO.
-
-**Why post-processing?**
-- It does not require retraining — useful when the model is a black box
-- It directly targets a specific fairness criterion
-- It is transparent: the per-group thresholds are explicit and auditable
-
-**Limitation:** Thresholds are calibrated on validation data. If the validation set is small or unrepresentative, the calibrated thresholds may not generalize well to the test set — which is precisely what we observe in the results.
-
----
-
-## 6. Interpretability theory and methods
-
-### Method 1 — Exact linear SHAP
-
-**Theory:** SHAP (SHapley Additive exPlanations) is a game-theoretic framework that assigns each feature a contribution φᵢ(x) to the model output, satisfying three axioms: efficiency, symmetry, and dummy player. For linear models, the SHAP values are exact and do not require sampling or approximation.
-
-**Formula:**
-```
-φᵢ(x) = wᵢ · (xᵢ − E_train[xᵢ])
-```
-
-where wᵢ is the model coefficient and E_train[xᵢ] is the mean of feature i in the training set (the reference baseline).
-
-**Aggregation for categorical features:**  
-One-hot encoding creates one dummy column per category. The SHAP values of all dummy columns belonging to the same original feature are **summed** to produce a single contribution per original feature. This makes the output interpretable in terms of the original feature space rather than the encoded one.
-
-**Why SHAP over plain coefficients?**  
-Raw coefficients depend on feature scale and are not comparable across features. SHAP values are in the output space (log-odds units) and directly comparable, even for one-hot encoded categoricals.
-
-### Method 2 — Permutation importance
-
-**Theory:** A model-agnostic method that measures the importance of feature i as the drop in ROC-AUC when feature i is randomly shuffled on the test set (breaking its relationship with the target).
-
-**Algorithm:**
-```
-For each feature i:
-    baseline_auc = ROC_AUC(model, X_test)
-    For r = 1 to R (R=10 repeats):
-        X_shuffled = X_test with column i permuted
-        importance_r = baseline_auc − ROC_AUC(model, X_shuffled)
-    importance[i] = mean(importance_r over R repeats)
-```
-
-**Why two interpretability methods?**  
-SHAP and permutation importance capture complementary signals:
-
-| Aspect | SHAP | Permutation Importance |
-|---|---|---|
-| Scope | Local (per sample) and global | Global only |
-| Basis | Model coefficients | Prediction change under shuffling |
-| Sensitivity | To feature magnitude × coefficient | To feature–target correlation |
-| Computational cost | O(n × d) | O(n × d × R) |
-
-If both methods agree on the top features, that convergence is strong evidence for their true importance. If they disagree, it may indicate non-linearity, feature correlations, or scale effects.
-
----
-
-## 7. Robustness evaluation
-
-**Motivation:** A model that passes fairness checks on a clean test set but is fragile under small perturbations provides weak guarantees in production, where data quality is imperfect.
-
-**Perturbation strategy:**
-
-| Feature type | Perturbation | Parameters |
-|---|---|---|
-| Numeric | Add Gaussian noise: x̃_j = x_j + ε_j, ε_j ~ N(0, σ_j²), σ_j = 0.2·std_train(x_j) | per-feature σ_j |
-| Categorical | Replace with random training-set value at probability p | p = 0.1 |
-
-**Design choices:**
-- numeric noise is scaled by each feature's train-set variability (`σ_j = 0.2·std_train(x_j)`) to keep perturbations comparable across units
-- p = 0.1 models ~10 % category misclassification — plausible data entry error rate
-- The same perturbation is applied identically to all three models so results are directly comparable
-
-**Evaluation:** All three models (baseline, reweighing, post-processing) are evaluated on both clean and perturbed test sets. Performance and fairness metrics are reported for both, allowing direct comparison of robustness across interventions.
-
-**Key question:** Do fairness interventions make the model more or less robust? (Hypothesis: no systematic effect expected.)
-
----
-
-## 8. Results and analysis
-
-### Gender-based fairness analysis (primary run)
-
-#### Clean test set
-
-| Model | ROC-AUC | Balanced Acc. | F1 | \|ΔDP\| | \|ΔEO\| |
-|---|---|---|---|---|---|
-| Baseline | 0.7900 | 0.7071 | 0.5915 | 0.1071 | 0.0741 |
-| Reweighing | **0.7917** | **0.7155** | **0.6014** | **0.0998** | **0.0438** |
-| Post-processing | 0.7900 | 0.7333 | 0.6216 | 0.2038 | 0.2222 |
-
-#### Analysis
-
-**Reweighing** achieves the best balance:
-- Marginal AUC improvement (+0.17 %) — likely statistical noise on 200 test samples
-- Slight reduction in ΔDP (−0.73 %) and meaningful reduction in ΔEO (−0.30 pp)
-- Demonstrates that correcting training distribution imbalances can improve fairness without sacrificing performance
-
-**Post-processing** produces unexpected results:
-- Perfect AUC preservation (as expected — the decision boundary is unchanged)
-- Significant worsening of ΔDP (+9.7 pp) and ΔEO (+14.8 pp)
-- **Explanation:** The group sizes in the validation set are small (~40 females in 200 validation samples). The threshold calibration overfits to the validation set and does not generalize to the test set. This is a well-known failure mode of post-processing methods on small, imbalanced groups.
-
-#### Robustness under perturbation
-
-| Model | AUC (clean) | AUC (perturbed) | AUC drop |
-|---|---|---|---|
-| Baseline | 0.7900 | 0.7651 | −2.49 % |
-| Reweighing | 0.7917 | 0.7665 | −2.51 % |
-| Post-processing | 0.7900 | 0.7651 | −2.49 % |
-
-All three models degrade similarly under perturbation. **Fairness interventions do not increase fragility.** This is an important finding: there is no robustness–fairness trade-off in this setting.
-
-### Feature importance (top 5)
-
-Both interpretability methods agree on the most important features:
-
-| Rank | SHAP (mean \|φ\|) | Permutation Importance (ΔAUC) |
-|---|---|---|
-| 1 | checking_status (0.576) | checking_status (0.088) |
-| 2 | savings_account_bonds (0.346) | purpose (0.028) |
-| 3 | credit_history (0.290) | savings_account_bonds (0.025) |
-| 4 | installment_rate (0.251) | duration_in_month (0.023) |
-| 5 | purpose (0.251) | credit_history (0.021) |
-
-**Interpretation:**
-- `checking_status` (the balance in the applicant's checking account) is by far the most predictive feature in both methods — a clear and financially legitimate signal
-- `credit_history` and `savings_account_bonds` also rank highly in both — coherent with credit risk theory
-- The gender variable does not appear in the top features, suggesting the bias does not come from a direct gender effect but from correlations between gender and other features (e.g., loan purpose, amount)
-
----
-
-## 9. Design decisions
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Model family | Logistic regression (custom) | Exact SHAP, transparent coefficients, sufficient for 1 000 samples |
-| No scikit-learn | Pure NumPy/Pandas | Auditable, portable, no implicit behavior |
-| Optimizer | Adam | Faster convergence than SGD; handles sparse one-hot features well |
-| Threshold selection | Youden index on validation | Accounts for class imbalance without arbitrary cutoff |
-| SHAP | Exact linear (not approximate) | Linear model allows closed-form; no Monte Carlo sampling error |
-| Categorical SHAP aggregation | Sum dummy SHAP values | Required for interpretability in original feature space |
-| Robustness noise | 20 % of std (numeric), 10 % swap (categorical) | Realistic noise levels; parameterizable via CLI |
-| Sensitive attribute | Gender (primary), Age (secondary) | Gender has clearest legal relevance; age allows comparison |
-| Fairness criterion for calibration | Equal Opportunity (default) | More ethically grounded for credit access than demographic parity |
-| Stratified split | Yes | Required to preserve label distribution in small splits |
-| Random seed | 42 (default, configurable) | Full reproducibility |
-
----
-
-## 10. Project structure
-
-```
-projet/
-├── README.md                          # This file
-├── pyproject.toml                     # Package metadata and dependencies
-├── uv.lock                            # Locked dependency versions
-│
-├── german_credit_rai/                 # Main Python package
-│   ├── __init__.py                    # Package version (0.2.0)
-│   ├── __main__.py                    # python -m entry point
-│   ├── cli.py                         # Argument parser and command dispatch
-│   └── pipeline.py                    # Core implementation (~1 350 lines)
-│       ├── TabularPreprocessor        # Normalization + one-hot encoding
-│       ├── LogisticRegressionGD       # Custom logistic regression with Adam
-│       ├── compute_linear_shap()      # Exact SHAP for linear models
-│       ├── aggregate_shap_by_raw_feature()  # Aggregate dummy SHAP to features
-│       ├── compute_group_thresholds() # Per-group threshold calibration
-│       ├── compute_fairness_metrics() # DP, EO, AOD, per-group breakdown
-│       └── run_pipeline()             # Full pipeline orchestration
-│
-├── notebook.ipynb                     # Interactive Jupyter analysis
-│
+```text
+.
+├── README.md
 ├── data/
-│   └── raw/
-│       └── german.data                # UCI raw dataset (auto-downloaded)
-│
-└── outputs/                           # Results (git-ignored in large runs)
-    ├── final_run/                     # Primary gender-based analysis
-    │   ├── metrics.json               # Full results + config (JSON)
-    │   ├── metrics_overview.csv       # Performance & fairness summary
-    │   ├── shap_summary_*.csv         # Per-feature SHAP importance
-    │   ├── shap_values_*.csv          # Per-sample SHAP values
-    │   ├── permutation_importance_*.csv
-    │   ├── predictions_clean.csv      # Predictions on clean test set
-    │   ├── predictions_perturbed.csv  # Predictions on perturbed test set
-    │   ├── *.png                      # Feature importance plots
-    │   ├── summary.md                 # Markdown report
-    │   └── run.log                    # Execution log
-    └── final_run_age/                 # Secondary age-based analysis
+│   └── raw/german.data
+├── doc/
+│   ├── german.pdf
+│   ├── responsibleAI-4.pdf
+│   └── todo_team.txt
+└── julien/
+    ├── data/raw/german.data
+    ├── requirements.txt
+    ├── responsiveAI-german-credit_light.ipynb
+    ├── responsiveAI-german-credit_rapport.tex
+    ├── responsiveAI-german-credit_rapport.pdf
+    └── responsiveAI-german-credit_rapport_compile.sh
 ```
 
----
+Le notebook lit `data/raw/german.data`. Une copie du même fichier existe aussi dans `julien/data/raw/german.data` si vous préférez travailler depuis ce dossier.
 
-## 11. Installation and usage
+## Données et objectif
 
-> **Python version required: 3.11.x** (exact — enforced by `uv.lock` and `.python-version`)
+Le fichier `german.data` est un fichier texte séparé par des espaces, sans en-tête. Le jeu de données contient 1 000 dossiers de crédit décrits par 20 attributs.
 
-This section covers how to get an identical working environment on **macOS**, **Linux**, and **Windows**.  
-Two paths are offered: **uv** (fast, handles Python version automatically) and **pip** (standard, requires Python 3.11 already installed).
+- Cible recodée: `Y = 1` pour un défaut de paiement, `Y = 0` sinon.
+- Attribut sensible genre: extrait de `personal_status_sex`.
+- Attribut sensible âge: binarisé avec un seuil à 25 ans.
 
----
+Le traitement du notebook suit une logique simple:
 
-### Option A — uv (recommended, all platforms)
+1. charger et nettoyer les données;
+2. explorer les biais initiaux sur le genre et l'âge;
+3. retirer les attributs sensibles du jeu d'entraînement de base;
+4. prétraiter avec `StandardScaler` pour le numérique et `OneHotEncoder(handle_unknown="ignore")` pour le catégoriel;
+5. entraîner une régression logistique;
+6. choisir un seuil sur la validation;
+7. mesurer performance et équité;
+8. appliquer le reweighing;
+9. appliquer un post-processing par seuils de groupe et `fairlearn`;
+10. expliquer le modèle avec SHAP et l'importance par permutation;
+11. quantifier l'incertitude avec bootstrap.
 
-`uv` is a fast Python package manager that installs the correct Python version automatically.
+## Formules clés
 
-#### macOS / Linux
+### Notation
 
-```bash
-# 1. Install uv
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Restart your shell or run:
-source $HOME/.cargo/env
-
-# 2. Clone the repo
-git clone https://github.com/YiZeems/fairness-project-german-credit.git
-cd fairness-project-german-credit
-
-# 3. Create the environment and install all dependencies
-#    uv reads .python-version (3.11) and uv.lock automatically
-uv sync
-
-# 4. (Optional) add Jupyter support
-uv sync --extra notebook
-```
-
-#### Windows (PowerShell)
-
-```powershell
-# 1. Install uv
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# Restart PowerShell, then:
-
-# 2. Clone the repo
-git clone https://github.com/YiZeems/fairness-project-german-credit.git
-cd fairness-project-german-credit
-
-# 3. Create the environment
-uv sync
-
-# 4. (Optional) add Jupyter support
-uv sync --extra notebook
-```
-
----
-
-### Option B — pip with Python 3.11
-
-Use this if you already have Python 3.11 installed and prefer the standard toolchain.
-
-#### macOS / Linux — pip
-
-```bash
-# Verify you have Python 3.11
-python3.11 --version   # must print 3.11.x
-
-# Clone the repo
-git clone https://github.com/YiZeems/fairness-project-german-credit.git
-cd fairness-project-german-credit
-
-# Create and activate a virtual environment
-python3.11 -m venv .venv
-source .venv/bin/activate
-
-# Install the package in editable mode
-pip install -e .
-
-# (Optional) add Jupyter support
-pip install -e ".[notebook]"
-```
-
-#### Windows — pip (PowerShell or CMD)
-
-```powershell
-# Verify you have Python 3.11
-python --version   # must print 3.11.x
-
-# Clone the repo
-git clone https://github.com/YiZeems/fairness-project-german-credit.git
-cd fairness-project-german-credit
-
-# Create and activate a virtual environment
-python -m venv .venv
-.venv\Scripts\activate
-
-# Install the package in editable mode
-pip install -e .
-
-# (Optional) add Jupyter support
-pip install -e ".[notebook]"
-```
-
-> **Where to get Python 3.11 on Windows:**  
-> Download the installer from [python.org/downloads](https://www.python.org/downloads/release/python-3119/) and tick *"Add python.exe to PATH"* during installation.
-
----
-
-### Verify the installation
-
-After either option, confirm everything works (same command on all platforms):
-
-```bash
-# With uv
-uv run python -m german_credit_rai --help
-
-# With pip (venv activated)
-python -m german_credit_rai --help
-```
-
-Expected output starts with `usage: german_credit_rai [-h] {run,show} ...`
-
----
-
-### Run the full pipeline
-
-The commands below use `python -m german_credit_rai`. If you used `uv`, prefix them with `uv run`:
-
-```bash
-# macOS / Linux — gender-based fairness analysis
-python -m german_credit_rai run \
-  --download-if-missing \
-  --sensitive-attribute gender \
-  --output-dir outputs/run_gender
-
-# Windows (PowerShell) — same command, no backslash continuation needed
-python -m german_credit_rai run --download-if-missing --sensitive-attribute gender --output-dir outputs/run_gender
-
-# Age-based fairness analysis (all platforms)
-python -m german_credit_rai run \
-  --download-if-missing \
-  --sensitive-attribute age \
-  --age-threshold 25 \
-  --output-dir outputs/run_age
-
-# Display results from a previous run
-python -m german_credit_rai show outputs/run_gender/metrics.json
-```
-
----
-
-### All CLI options
-
-| Option | Default | Description |
-|---|---|---|
-| `--download-if-missing` | off | Fetch german.data from UCI if not present |
-| `--sensitive-attribute` | `gender` | `gender` or `age` |
-| `--age-threshold` | `25` | Age cutoff for young/old split |
-| `--postprocessing-criterion` | `equal_opportunity` | `demographic_parity` or `equal_opportunity` |
-| `--noise-scale` | `0.2` | Gaussian noise σ as fraction of feature std |
-| `--category-swap-prob` | `0.1` | Probability of replacing a categorical value |
-| `--learning-rate` | `0.03` | Adam learning rate |
-| `--epochs` | `3500` | Maximum training epochs |
-| `--l2` | `0.01` | L2 regularization coefficient |
-| `--random-seed` | `42` | Global random seed |
-| `--output-dir` | `outputs/run` | Directory for all output files |
-| `--log-level` | `INFO` | Logging verbosity |
-
----
-
-### Interactive notebook
-
-```bash
-# With uv
-uv run jupyter notebook notebook.ipynb
-
-# With pip (venv activated)
-jupyter notebook notebook.ipynb
-```
-
-> **Windows note:** if the browser does not open automatically, copy the URL printed in the terminal (e.g. `http://localhost:8888/?token=...`) and paste it into your browser.
-
-The notebook follows the same structure as the CLI pipeline and adds visual exploration of the data distribution, training curves, and per-group fairness metrics.
-
----
-
-## 12. Outputs reference
-
-Every run writes the following files to `--output-dir`:
-
-| File | Description |
+| Symbole | Sens |
 |---|---|
-| `run.log` | Full execution log with timestamps |
-| `metrics.json` | Complete results: config, per-model performance and fairness metrics |
-| `metrics_overview.csv` | Flat CSV summary of all models × scenarios |
-| `shap_summary_baseline.csv` | Mean \|SHAP\| per feature for the baseline model |
-| `shap_summary_fair.csv` | Mean \|SHAP\| per feature for the reweighing model |
-| `shap_values_baseline.csv` | Per-sample SHAP values (baseline) |
-| `shap_values_fair.csv` | Per-sample SHAP values (reweighing) |
-| `permutation_importance_baseline.csv` | AUC drop per feature (baseline) |
-| `permutation_importance_fair.csv` | AUC drop per feature (reweighing) |
-| `predictions_clean.csv` | Predictions (all models) on the clean test set |
-| `predictions_perturbed.csv` | Predictions (all models) on the perturbed test set |
-| `shap_baseline.png` | SHAP bar chart — baseline model |
-| `shap_fair.png` | SHAP bar chart — reweighing model |
-| `permutation_importance_baseline.png` | Permutation importance bar chart — baseline |
-| `permutation_importance_fair.png` | Permutation importance bar chart — reweighing |
-| `summary.md` | Human-readable markdown report |
+| `x_i` | vecteur d'attributs de l'exemple `i` |
+| `y_i` | label vrai, avec `1 = défaut` et `0 = bon payeur` |
+| `S` | attribut sensible |
+| `\hat Y` | prédiction binaire après seuillage |
+| `p_i` | probabilité prédite de défaut |
+| `\tau` | seuil de décision |
+| `TP, FP, TN, FN` | éléments de la matrice de confusion |
 
----
+### Régression logistique
 
-## 13. Dependencies
+La régression logistique transforme un score linéaire en probabilité:
 
-| Package | Version | Role |
-|---|---|---|
-| `numpy` | ≥ 1.26 | All numerical computation (model, SHAP, metrics) |
-| `pandas` | ≥ 2.2 | Data loading, preprocessing, CSV output |
-| `requests` | ≥ 2.32 | Dataset download from UCI |
-| `matplotlib` | ≥ 3.8 | Optional — feature importance plots |
-| `jupyter` | ≥ 1.0 | Optional — interactive notebook |
+$$
+p_i = \sigma(w^\top x_i + b),
+\qquad
+\sigma(z) = \frac{1}{1 + e^{-z}}
+$$
 
-Python ≥ 3.11 required. **No scikit-learn dependency** by design.
+La perte minimisée dans le notebook est une entropie croisée binaire pondérée avec régularisation L2:
 
----
+$$
+\mathcal{L}
+=
+-\frac{1}{n}\sum_{i=1}^{n} s_i \Big[y_i \ln p_i + (1-y_i)\ln(1-p_i)\Big]
++
+\frac{1}{2C}\|w\|^2
+$$
 
-## 14. Known limitations
+- `s_i` est le poids de l'exemple, égal à `1` sur le baseline et remplacé par les poids de reweighing lors de la mitigation;
+- `C` est l'inverse de la régularisation L2;
+- `p_i` est la probabilité prédite de défaut.
 
-1. **Linear model only** — logistic regression cannot capture feature interactions; a gradient boosted tree might improve AUC by ~5–10 pp on this dataset
-2. **Single sensitive attribute at a time** — no intersectional analysis (e.g., young women vs. older men); intersectional fairness requires much larger datasets to estimate reliably
-3. **No confidence intervals** — with only 200 test samples, metric differences of < 2 pp should be interpreted with caution; bootstrap CIs would be needed for rigorous comparison
-4. **Post-processing overfitting on small groups** — the validation set contains ~40 female examples; calibrated thresholds are noisy and do not generalize (observed in results)
-5. **Fairness–accuracy impossibility** — it is mathematically impossible to satisfy both demographic parity and equal opportunity simultaneously unless base rates are equal; the project does not attempt joint optimization
-6. **Synthetic perturbations** — the robustness evaluation uses simple i.i.d. noise; real distribution shifts (covariate shift, label shift, adversarial attacks) may produce qualitatively different effects
+### Seuil et performance
 
----
+La décision binaire est obtenue par seuillage:
 
-## 15. Formula variable glossary
+$$
+\hat y_i = \mathbf{1}[p_i \ge \tau]
+$$
 
-This section lists the variables used in the main formulas (Notebooks 2 to 5), with their meaning and practical role.
+Le seuil n'est pas fixé à `0.5`. Il est balayé sur la validation et choisi pour maximiser la balanced accuracy:
 
-### 15.1 Baseline model (Notebook 2)
+$$
+\text{BalAcc}
+=
+\frac{1}{2}(\text{TPR}+\text{TNR})
+=
+\frac{1}{2}\left(\frac{TP}{TP+FN}+\frac{TN}{TN+FP}\right)
+$$
 
-| Symbol | Meaning | Why it matters |
-|---|---|---|
-| `x` | Feature vector of one applicant | Input used to produce a risk score |
-| `X` | Feature matrix for all samples | Batch training and prediction |
-| `y` | True label (`1` = default, `0` = non-default) | Supervised learning target |
-| `\hat{p}` | Predicted probability of default | Core risk score used for thresholding |
-| `\sigma(z)` | Sigmoid function | Converts linear score to probability |
-| `w` | Model coefficients | Encodes feature effects on log-odds |
-| `b` | Intercept (bias term) | Global offset of model predictions |
-| `\mathcal{L}(w,b)` | BCE + L2 objective | Optimization criterion during training |
-| `\alpha_i` | Sample weight for training instance `i` | Allows fairness reweighting during training |
-| `\lambda` | L2 regularization strength | Controls overfitting on small data |
-| `n` | Number of samples | Normalizes loss and gradients |
-| `t` | Decision threshold | Converts probabilities into class predictions |
-| `TP, FP, TN, FN` | Confusion matrix components | Basis of classification metrics |
-| `TPR, TNR` | Sensitivity / specificity | Used in Balanced Accuracy |
-| `AUC` | Area under ROC curve | Threshold-independent ranking quality |
-| `ECE` | Expected Calibration Error | Probability reliability measure |
+Le rapport suit aussi le coût métier:
 
-### 15.2 Fairness metrics and mitigation (Notebook 3)
+$$
+\text{Coût} = 5\,FN + 1\,FP
+$$
 
-| Symbol | Meaning | Why it matters |
-|---|---|---|
-| `S` | Sensitive attribute (gender or age group) | Group fairness is measured conditionally on `S` |
-| `s_p` | Privileged group | Reference group for fairness gaps |
-| `s_c` | Comparison group | Group compared against privileged group |
-| `\hat{Y}` | Binary model decision | Used by DP/EO fairness formulas |
-| `\Delta_{DP}` | Demographic parity gap | Difference in positive prediction rates |
-| `\Delta_{EO}` | Equal opportunity gap | Difference in TPR across groups |
-| `\text{Ratio}_{DP}` | Selection-rate ratio | Relative parity indicator (e.g. 80% rule context) |
-| `w_i` (reweighing) | Fairness correction weight for sample `i` | Rebalances group-label representation in training |
-| `P(S), P(Y), P(S,Y)` | Marginal and joint probabilities | Used to compute reweighing weights |
-| `t_s` | Group-specific threshold | Post-processing lever to target fairness criteria |
+Le jeu de données UCI pénalise plus fortement les faux négatifs, car approuver un mauvais crédit est plus coûteux que refuser un bon dossier.
 
-### 15.3 Interpretability (Notebook 4)
+### Métriques d'équité
 
-| Symbol | Meaning | Why it matters |
-|---|---|---|
-| `f(x)` | Model output (log-odds) | Quantity explained by SHAP |
-| `\phi_i(x)` | SHAP contribution of feature `i` | Local explanation of each feature effect |
-| `\phi_0` | Baseline value (expected output) | Reference point in additive SHAP decomposition |
-| `d` | Number of features | Dimension in SHAP sum decomposition |
-| `\mathbb{E}_{train}[x_i]` | Train-set mean of feature `i` | Reference used in exact linear SHAP |
-| `k` (dummy indices) | One-hot columns belonging to one categorical feature | Needed to aggregate SHAP back to original features |
-| `Imp(j)` | Permutation importance of feature `j` | Measures AUC drop when feature signal is broken |
-| `R` | Number of permutation repeats | Stabilizes importance estimates |
-| `\tilde{X}_{j,r}` | Test set with feature `j` shuffled at repeat `r` | Counterfactual dataset for permutation importance |
-| `AUC_{orig}` | Baseline AUC before permutation | Reference for computing performance drop |
+Les deux métriques centrales du notebook sont:
 
-### 15.4 Robustness and calibration (Notebook 5)
+$$
+|\Delta \text{DP}|
+=
+\left|P(\hat Y=1 \mid S=0) - P(\hat Y=1 \mid S=1)\right|
+$$
 
-| Symbol | Meaning | Why it matters |
-|---|---|---|
-| `\tilde{x}_j` | Perturbed value of numeric feature `j` | Simulates noisy measurements in production |
-| `\varepsilon_j` | Additive Gaussian noise term | Controls stochastic perturbation magnitude |
-| `\sigma_j` | Noise scale (`0.2 * std_train`) | Anchors perturbation to feature variability |
-| `p` | Categorical swap probability (default `0.1`) | Simulates category miscoding |
-| `scores_{clean}, scores_{pert}` | Predictions before/after perturbation | Used to assess score stability |
-| `\Delta` | Perturbed minus clean metric | Quantifies robustness drift |
-| `ECE` (post-perturbation) | Calibration error under noise | Checks probability reliability under degraded inputs |
+$$
+|\Delta \text{EO}|
+=
+\left|\text{TPR}_{S=0} - \text{TPR}_{S=1}\right|
+$$
 
----
+On suit aussi le disparate impact comme un ratio de taux de sélection entre un groupe comparé et un groupe de référence:
 
-## References
+$$
+\text{DI}
+=
+\frac{P(\hat Y=1 \mid S=\text{groupe comparé})}{P(\hat Y=1 \mid S=\text{groupe de référence})}
+$$
 
-- Kamiran, F. & Calders, T. (2012). *Data preprocessing techniques for classification without discrimination.* Knowledge and Information Systems, 33(1), 1–33.
-- Hardt, M., Price, E., & Srebro, N. (2016). *Equality of opportunity in supervised learning.* NeurIPS 2016.
-- Lundberg, S. M. & Lee, S.-I. (2017). *A unified approach to interpreting model predictions.* NeurIPS 2017.
-- Dua, D. & Graff, C. (2019). UCI Machine Learning Repository. German Credit dataset.
-- Kingma, D. P. & Ba, J. (2015). *Adam: A method for stochastic optimization.* ICLR 2015.
+Le repère usuel est `0.8` pour le 80% rule. La convention exacte dépend du choix du groupe de référence, donc il faut lire ce ratio avec le sens utilisé dans le rapport.
+
+### Reweighing
+
+Le reweighing corrige la distribution d'entraînement en donnant plus de poids aux combinaisons `(groupe, label)` sous-représentées:
+
+$$
+w_i = \frac{P(S=s_i)\,P(Y=y_i)}{P(S=s_i, Y=y_i)}
+$$
+
+L'idée est de rapprocher `S` et `Y` d'une indépendance dans la distribution pondérée, sans changer la structure du modèle. Dans le notebook, ces poids sont passés à l'entraînement via `sample_weight`.
+
+### Post-processing par groupe
+
+Le post-processing utilise un seuil spécifique à chaque groupe sensible:
+
+$$
+\hat y_i = \mathbf{1}[p_i \ge \tau_{S_i}]
+$$
+
+Cette stratégie vise surtout la Demographic Parity. Le notebook compare une heuristique maison et la version officielle de `fairlearn` (`ThresholdOptimizer`) pour DP, EO et equalized odds. Sur un petit jeu de validation, cette approche peut surajuster.
+
+### SHAP et permutation importance
+
+Pour une régression logistique, les SHAP exacts s'écrivent:
+
+$$
+\phi_i(x)
+=
+w_i \cdot \left(x_i - \mathbb{E}_{train}[x_i]\right)
+$$
+
+La contribution est positive si la feature pousse vers le défaut, négative sinon. Pour les variables catégorielles encodées en one-hot, les contributions des dummies sont agrégées par feature d'origine.
+
+L'importance par permutation mesure la chute d'AUC quand on mélange une colonne:
+
+$$
+\text{Imp}(j)
+=
+\frac{1}{R}\sum_{r=1}^{R}
+\left(AUC_{orig} - AUC_{shuffled(j,r)}\right)
+$$
+
+Le notebook répète la permutation 10 fois par feature pour stabiliser l'estimation.
+
+### Bootstrap et incertitude
+
+Le rapport remplace la robustesse adversariale par une quantification d'incertitude par bootstrap. On tire `B = 200` rééchantillonnages avec remise et on calcule des intervalles de confiance par quantiles:
+
+$$
+\text{IC}_{95\%} = [q_{0.025}, q_{0.975}]
+$$
+
+Cela donne une lecture plus prudente des écarts d'équité observés sur seulement 200 exemples de test.
+
+## Résultats marquants
+
+- L'axe le plus sensible dans le rapport est l'âge, pas le genre.
+- Sur la version actuellement documentée, le genre devient peu problématique après retrait de `personal_status_sex` (`|\Delta DP| \approx 0.010`).
+- L'âge montre un vrai compromis entre DP et EO: le post-processing réduit `|\Delta DP|` mais augmente `|\Delta EO|`.
+- Le rapport illustre ce compromis avec `|\Delta DP| \approx 0.125` avant mitigation sur l'âge, puis `\approx 0.060` après post-processing, tandis que `|\Delta EO|` passe d'environ `0.066` à `0.135`.
+- Les SHAP et la permutation importance pointent les mêmes variables dominantes: `checking_status`, `duration_in_month`, `credit_amount`, `credit_history`, `savings_account_bonds`.
+- Les intervalles bootstrap restent larges; il faut donc éviter de surinterpréter de petits écarts d'équité.
+
+## Installation et exécution
+
+Le plus simple est de partir du dépôt racine, de créer un environnement virtuel puis d'installer les dépendances du notebook:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\activate
+python -m pip install -r julien/requirements.txt
+```
+
+Ensuite, lancez Jupyter depuis la racine du dépôt et ouvrez `julien/responsiveAI-german-credit_light.ipynb`. Le notebook s'attend à trouver `data/raw/german.data` par rapport à la racine du dépôt.
+
+Le rapport est déjà disponible en PDF. La source LaTeX et le script de compilation sont conservés dans `julien/` pour régénérer le document si nécessaire.
+
+## Références utiles
+
+- UCI Machine Learning Repository, German Credit Data.
+- Kamiran & Calders, reweighing pour la classification sans discrimination.
+- Hardt et al., Equal Opportunity et post-processing par seuils.
+- Lundberg & Lee, SHAP.
+- Chouldechova et Kleinberg, théorème d'impossibilité entre fairness, calibration et contraintes de taux.
