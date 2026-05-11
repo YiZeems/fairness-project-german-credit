@@ -36,13 +36,6 @@
     left=4pt, right=4pt, top=3pt, bottom=3pt,
     boxrule=0.6pt
 }
-\newtcolorbox{infobox}[1][Note]{
-    enhanced, breakable,
-    colback=accent!8, colframe=accent!70!black,
-    fonttitle=\bfseries\small, title={#1},
-    left=4pt, right=4pt, top=3pt, bottom=3pt,
-    boxrule=0.6pt
-}
 
 \setlength{\parskip}{0.4em}
 \setlength{\parindent}{0pt}
@@ -68,13 +61,18 @@ IA708 --- Télécom Paris, 2026 \\[0.4em]
 \vspace{-1em}
 
 \begin{abstract}
-\noindent Étude d'un modèle de scoring crédit (UCI German Credit, 1000 lignes) sous l'angle de l'IA responsable.
-On évalue la régression logistique baseline sur trois axes :
-\textbf{équité} (Demographic Parity, Equal Opportunity, Disparate Impact, audit intersectionnel),
-\textbf{interprétabilité} (SHAP global et local, détection de proxies),
-et \textbf{quantification d'incertitude} (bootstrap, $B = 200$, en substitution à la robustesse adversariale sur conseil de l'enseignante).
-Stack : \texttt{scikit-learn}, \texttt{fairlearn}, \texttt{shap}, exécution reproductible via \texttt{papermill}.
+\noindent Étude d'un modèle de scoring crédit (UCI German Credit, 1000 lignes) sous l'angle de l'IA responsable. On évalue une régression logistique baseline sur trois axes : équité (DP, EO, DI, audit intersectionnel genre $\times$ âge), interprétabilité (SHAP global et local, détection de proxies univariés et multivariés), et quantification d'incertitude (bootstrap $B = 500$ sur le baseline, $B = 100$ sur trois variantes ; en substitution à la robustesse adversariale, conformément à la consigne reçue). La démarche compare systématiquement trois versions du modèle : V1 avec attributs sensibles, V2 sans (baseline), V3 sans + proxies univariés ($|r| > 0.15$) retirés. Stack : \texttt{scikit-learn}, \texttt{fairlearn}, \texttt{shap} ; exécution reproductible via \texttt{papermill}. Résultat principal : V3 améliore simultanément la performance (AUC 0.785 $\to$ 0.790) et l'équité par attribut isolé (DI âge 0.69 $\to$ 0.87, au-dessus du seuil légal EEOC ; $|\Delta\text{DP}_{\text{age}}|$ de 0.125 à 0.044) sans intervention in/post-modèle, mais ne résout pas le biais intersectionnel (DI = 0.48 sur genre $\times$ âge).
 \end{abstract}
+
+\section*{Utilisation de l'IA dans ce projet}
+
+Dans le cadre de ce projet, nous avons utilisé ponctuellement des outils d'intelligence artificielle générative, notamment des assistants conversationnels de type ChatGPT ou Claude. Leur utilisation n'a pas eu vocation à remplacer le travail d'analyse, de conception ou d'expérimentation réalisé par le groupe, mais plutôt à servir de support méthodologique et technique à certaines étapes du projet.
+
+Ces outils ont principalement été employés comme moteurs de recherche augmentés, afin d'obtenir rapidement des explications générales sur certaines notions du cours, sur les méthodes de machine learning équitable et interprétable, ou encore sur des points techniques liés à leur mise en \oe uvre. Les informations obtenues par ce biais ont systématiquement été confrontées aux supports de cours, aux documents fournis dans le cadre du projet, ainsi qu'aux sources scientifiques ou documentaires pertinentes lorsque cela était nécessaire. L'objectif était donc de faciliter la compréhension initiale, sans considérer les réponses générées comme des références définitives.
+
+Les outils d'IA ont également été utilisés comme aide ponctuelle à la programmation. Ils ont pu contribuer à générer certaines portions de code simples, à proposer des structures de fonctions, à expliquer des erreurs rencontrées lors de l'exécution, ou encore à suggérer des pistes de correction pour des bugs. Cependant, le code final intégré au projet a été relu, adapté, testé et validé par les membres du groupe. Les choix méthodologiques, les expérimentations réalisées, l'interprétation des résultats et les conclusions du rapport relèvent du travail du groupe.
+
+Enfin, ces outils ont servi d'appui pour la structuration et la rédaction du rapport. À partir du contenu, des résultats et des orientations définis au préalable par le groupe, ils ont pu aider à reformuler certaines explications, à améliorer la clarté de certains passages ou à générer une première version structurée de certaines sections. La version finale du rapport a toutefois été relue, corrigée et complétée par le groupe afin de garantir sa cohérence avec le travail effectivement réalisé.
 
 \tableofcontents
 \vspace{1em}
@@ -84,17 +82,14 @@ Stack : \texttt{scikit-learn}, \texttt{fairlearn}, \texttt{shap}, exécution rep
 
 \subsection{Dataset et attributs sensibles}
 
-UCI Statlog German Credit (Hofmann, 1994) : 1000 lignes, 20 attributs (6 numériques, 14 catégoriels). Les codes \texttt{Axx} sont traduits en libellés français. Cible binaire : défaut de paiement (30\,\%) vs bon payeur (70\,\%).
+Le dataset UCI Statlog German Credit (Hofmann, 1994) comporte 1000 lignes et 20 attributs (6 numériques, 14 catégoriels), avec une cible binaire (30 \% de défauts, 70 \% de bons payeurs). Les codes catégoriels \texttt{Axx} sont traduits en libellés français lors du chargement, afin que les noms de features apparaissant dans les figures SHAP et dans les audits soient interprétables.
 
-Deux attributs sensibles sont définis :
-\begin{itemize}
-    \item \textbf{Genre} (depuis \texttt{personal\_status\_sex}) : 690 hommes, 310 femmes.
-    \item \textbf{Âge} binarisé au seuil 25 ans, convention de la littérature (Kamiran \& Calders 2012, AIF360) : 810 \emph{older}, 190 \emph{younger}.
-\end{itemize}
+Deux attributs sensibles sont retenus pour l'audit : le genre, dérivé de \texttt{personal\_status\_sex} (690 hommes, 310 femmes) ; et l'âge binarisé au seuil de 25 ans, suivant la convention Kamiran \& Calders (2012) reprise par AIF360 (Bellamy et al.\ 2018), qui aboutit à 810 \emph{older} et 190 \emph{younger}. Le choix de ce seuil est justifié dans la littérature par l'idée que les jeunes adultes n'ont pas encore eu l'opportunité de bâtir un historique de crédit ; cette particularité statistique ne doit pas se traduire mécaniquement par une exclusion algorithmique.
+
+Le RGPD (article 9) et la directive européenne 2000/43/CE classent l'âge et le sexe comme caractéristiques protégées : un modèle de scoring crédit ne peut s'en servir pour discriminer, qu'il s'agisse d'une utilisation directe ou indirecte via des proxies.
 
 \subsection{Biais bruts}
 
-Les taux de défaut diffèrent fortement entre groupes :
 \begin{table}[H]
 \centering
 \begin{tabular}{lcc}
@@ -111,26 +106,47 @@ Younger  & 0.58 & \textbf{0.42} \\
 \caption{Taux de défaut conditionnel par groupe sensible (données brutes).}
 \end{table}
 
-\noindent Un modèle qui copie ces statistiques sera mécaniquement biaisé. C'est l'enjeu central du projet.
+Les taux de défaut diffèrent fortement entre groupes. Un modèle qui apprend à reproduire la distribution conditionnelle observée encodera mécaniquement ces écarts. C'est la justification statistique de l'audit fairness qui suit.
+
+\subsection{Détection de proxies}
+\label{sec:proxies-early}
+
+Un proxy est une feature corrélée à un attribut sensible, suffisamment informative pour permettre au modèle de reconstruire indirectement cette information protégée. La conséquence pratique est qu'un simple retrait des attributs sensibles ne suffit pas à supprimer le biais : tant que les proxies sont en place, le modèle continue de capter le signal discriminatoire.
+
+On utilise deux mesures complémentaires. Le premier est la corrélation univariée $|r|$ de Pearson entre chaque feature encodée et l'attribut sensible binaire, avec un seuil empirique conservateur $|r| > 0.15$ (la littérature retient des valeurs comprises entre 0.1 et 0.2). Le second est une régression logistique multivariée features $\to$ attribut sensible : son AUC mesure la \emph{découvrabilité} de l'attribut depuis le reste des features, et une valeur $> 0.65$ indique un signal proxy multivarié significatif (au-dessus du hasard à 0.5).
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Attribut sensible} & \textbf{AUC multivariée} & \textbf{Nb features identifiées comme proxy} ($|r|>0.15$) \\
+\midrule
+Genre & 0.69 & 8 \\
+Âge   & \textbf{0.86} & 15 \\
+\midrule
+Union & --- & 17 \\
+\bottomrule
+\end{tabular}
+\caption{Détection de proxies : régression multivariée et corrélation univariée.}
+\end{table}
+
+Les proxies identifiés en univarié sont, pour l'âge, \texttt{housing\_locataire} ($|r|=0.33$), \texttt{present\_employment\_since\_$\geq 7$ans} (0.27), \texttt{credit\_history} (0.24), \texttt{job\_management} (0.24) ; et pour le genre, \texttt{number\_of\_people\_liable} (0.23), \texttt{present\_employment\_since} (0.21), \texttt{housing\_locataire} (0.21). L'AUC multivariée features $\to$ âge atteint 0.86, ce qui confirme qu'un modèle pourrait \emph{reconstruire} l'âge à partir du reste des variables avec une bonne fiabilité, et que retirer seulement \texttt{age\_in\_years} laisserait intact l'essentiel du signal discriminatoire.
+
+\begin{leconbox}[Conséquence opérationnelle]
+On constitue une troisième variante du jeu d'entraînement (\texttt{X\_tr\_np}, \texttt{X\_va\_np}, \texttt{X\_te\_np}), notée V3, où les 17 features ainsi identifiées sont retirées en plus des attributs sensibles. Cette variante est comparée tout au long du rapport à V1 (avec attributs sensibles) et V2 (sans, baseline), notamment dans la section~\ref{sec:perf-3}.
+\end{leconbox}
 
 \subsection{Préparation}
 
-\texttt{ColumnTransformer} (Pedregosa et al.\ 2011) combine \texttt{StandardScaler} pour les numériques et \texttt{OneHotEncoder} pour les catégorielles : 56 features finales.
-
-Split stratifié 60/20/20 (train/val/test, \texttt{random\_state=42}). Les attributs sensibles (\texttt{personal\_status\_sex}, \texttt{age\_in\_years}) sont retirés des features ; on verra que ce retrait ne suffit pas à supprimer leur influence (\S\ref{sec:proxies}).
+Le pipeline de prétraitement utilise un \texttt{ColumnTransformer} (Pedregosa et al.\ 2011) qui applique un \texttt{StandardScaler} aux variables numériques et un \texttt{OneHotEncoder} aux variables catégorielles. On obtient 56 features finales après encodage, ramenées à 39 dans la variante V3. Les données sont séparées par un split stratifié 60 / 20 / 20 (\texttt{random\_state = 42}) en train, validation et test, garantissant la reproductibilité des résultats.
 
 % ════════════════════════════════════════════════════════════════
-\section{Modèle baseline : régression logistique}
+\section{Modèle baseline}
 \label{sec:baseline}
 
-\subsection{Choix du modèle}
+\subsection{Choix et entraînement}
 
-\texttt{LogisticRegression} (sklearn, solver \texttt{liblinear}, $C=1$, $L_2$). Le modèle :
-$$P(\text{défaut}=1 \mid x) = \sigma(w^\top x + b)$$
-
-Trois raisons à ce choix : (1) interprétabilité native, (2) formule SHAP exacte (Lundberg \& Lee 2017, Corollary~1), (3) naturellement bien calibré sur petit dataset.
-
-Le seuil de classification $\tau = 0.18$ est choisi pour maximiser la balanced accuracy sur la validation. Convergence : 6 itérations effectives.
+Le modèle baseline est une régression logistique L2 (\texttt{sklearn.linear\_model.LogisticRegression}, solver \texttt{liblinear}, $C = 1$), choisie pour sa simplicité, l'expressivité de ses coefficients (chaque feature a une contribution linéaire signée) et la disponibilité d'un Linear SHAP exact. L'entraînement converge en 6 itérations effectives sur le train (600 lignes). Le seuil de classification $\tau = 0.18$ est calibré sur le set de validation pour maximiser la balanced accuracy, ce qui équilibre les erreurs sur la classe minoritaire (les défauts).
 
 \subsection{Performance globale}
 
@@ -138,75 +154,95 @@ Le seuil de classification $\tau = 0.18$ est choisi pour maximiser la balanced a
 \centering
 \begin{tabular}{lc}
 \toprule
-\textbf{Métrique} & \textbf{Valeur (test)} \\
+\textbf{Métrique} & \textbf{Test} \\
 \midrule
-AUC ROC                        & 0.785 \\
-Average Precision (AP)         & 0.607 \\
-Balanced Accuracy ($\tau=0.18$) & 0.669 \\
+AUC ROC                          & 0.785 \\
+Average Precision                & 0.607 \\
+Balanced Accuracy                & 0.669 \\
 \midrule
-Confusion : TN / FP / FN / TP & 66 / 74 / 8 / 52 \\
-TPR (rappel défaut)            & 86.7\,\% \\
-PPV (précision)                & 41.3\,\% \\
+Confusion (TN / FP / FN / TP)    & 66 / 74 / 8 / 52 \\
+TPR (rappel défaut)              & 86.7\,\% \\
+PPV (précision)                  & 41.3\,\% \\
 \bottomrule
 \end{tabular}
-\caption{Métriques de performance du baseline sur le test (200 lignes).}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/10_baseline_perf.png}
-\caption{Matrice de confusion (gauche), courbe ROC (centre, AUC = 0.785), courbe Precision-Recall (droite, AP = 0.607). Au seuil 0.18, le modèle privilégie la détection des défauts (TPR = 87\,\%) au prix d'un taux de faux positifs élevé.}
+\caption{Matrice de confusion (gauche), courbe ROC AUC = 0.785 (centre), courbe Precision-Recall AP = 0.607 (droite).}
 \end{figure}
 
 \subsection{Coût métier (matrice UCI)}
 
-UCI fournit une matrice de coût : un défaut approuvé (FN) coûte 5$\times$ plus qu'un bon refusé (FP). On compare deux seuils :
-\begin{itemize}
-    \item \texttt{thr\_balacc} = 0.18 : maximise la balanced accuracy. Coût test = 114.
-    \item \texttt{thr\_cost} = 0.14 : minimise $5 \cdot \text{FN} + 1 \cdot \text{FP}$. Coût test = 122.
-\end{itemize}
-Le rappel des défauts (TPR) est identique pour les deux seuils. Sur petit dataset, la calibration coût-optimale par validation se généralise mal au test.
+La page UCI documente explicitement une matrice de coûts asymétriques pour ce dataset : \og{} It is worse to class a customer as good when they are bad (5), than it is to class a customer as bad when they are good (1) \fg{} (source : \url{https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data}). Cette asymétrie reflète une intuition bancaire : laisser passer un mauvais payeur (FN) entraîne une perte financière supérieure au manque à gagner d'un bon client refusé (FP).
+
+Cette information est utilisée pour comparer deux choix de seuil. Le premier, $\tau_{\text{balacc}} = 0.18$, maximise la balanced accuracy et conduit à un coût test de 114 unités. Le second, $\tau_{\text{cost}} = 0.14$, minimise directement $5 \cdot \text{FN} + 1 \cdot \text{FP}$ et donne un coût test de 122. Contre-intuitivement, c'est le seuil balanced accuracy qui se montre le plus économe sur cet échantillon, parce que sa TPR (taux de détection des défauts) est identique mais sa précision sur les non-défauts un peu meilleure. On retient $\tau = 0.18$ pour la suite du rapport.
 
 % ════════════════════════════════════════════════════════════════
 \section{Audit d'équité}
 
 \subsection{Métriques utilisées}
 
-Calculs via \texttt{fairlearn.metrics.MetricFrame} (Bird et al.\ 2020) :
-\begin{itemize}
-    \item $|\Delta\text{DP}|$ \emph{Demographic Parity gap} : $|\Pr(\hat{Y}{=}1 \mid A{=}0) - \Pr(\hat{Y}{=}1 \mid A{=}1)|$
-    \item $|\Delta\text{EO}|$ \emph{Equalized Odds gap} : $\max(|\Delta\text{TPR}|, |\Delta\text{FPR}|)$ (Hardt et al.\ 2016)
-    \item DI \emph{Disparate Impact ratio} : $\min_g \text{approval}_g / \max_g \text{approval}_g$. Règle US 80\,\% (EEOC) : DI $< 0.8$ = présomption de discrimination indirecte.
-\end{itemize}
+Les calculs s'appuient sur \texttt{fairlearn.metrics.MetricFrame} (Bird et al.\ 2020), qui calcule chaque métrique par sous-groupe puis prend l'écart maximum. Trois quantités résument l'équité du modèle. Le \emph{Demographic Parity gap} $|\Delta\text{DP}|$ mesure l'écart entre taux de sélection (taux d'octroi du crédit) entre groupes ; il est dans $[0, 1]$, et plus petit est mieux. L'\emph{Equalized Odds gap} $|\Delta\text{EO}|$ (Hardt et al.\ 2016) mesure l'écart maximum entre TPR ou FPR par groupe ; il garantit que les vrais bons payeurs ont la même chance d'être acceptés indépendamment du groupe. Le \emph{Disparate Impact ratio} (DI) est le rapport entre le taux d'octroi du groupe le moins favorisé et celui du groupe le plus favorisé ; la règle US des 80~\% (EEOC, 1978) considère qu'un DI inférieur à 0.8 fait présumer une discrimination indirecte.
 
-\begin{attentionbox}[Théorème d'impossibilité (Chouldechova 2017, Kleinberg et al.\ 2017)]
-Si les taux de base diffèrent entre groupes ($p_0 \neq p_1$), DP et EO ne peuvent être satisfaits simultanément. Il faut \textbf{choisir} le critère prioritaire.
+\begin{attentionbox}[{Théorème d'impossibilité (Chouldechova 2017 ; Kleinberg et al.\ 2017)}]
+Lorsque les taux de défaut différent entre groupes (ce qui est le cas ici, 27 \% vs 42 \% entre \emph{older} et \emph{younger}), les critères DP et EO ne peuvent être satisfaits simultanément par un même modèle. Toute intervention qui force DP à zéro fait remonter EO, et inversement. Il faut donc choisir explicitement quel critère est prioritaire, en fonction du contexte légal et opérationnel.
 \end{attentionbox}
 
-\subsection{Audit par axe}
+\subsection{Audit par axe (baseline sans attributs sensibles)}
 
 \begin{table}[H]
 \centering
-\begin{tabular}{lcccc}
+\begin{tabular}{lccc}
 \toprule
-\textbf{Attribut} & \textbf{Approval rate} (par groupe) & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ & \textbf{DI} \\
+\textbf{Attribut} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ & \textbf{DI} \\
 \midrule
-\textbf{Genre} & H 0.37, F 0.38   & 0.010 & 0.058 & 0.97 \\
-\textbf{Âge}   & older 0.40, younger 0.27 & \textbf{0.125} & 0.066 & \textbf{0.69} \\
+Genre & 0.010 & 0.058 & 0.97 \\
+Âge   & \textbf{0.125} & 0.066 & \textbf{0.69} \\
 \bottomrule
 \end{tabular}
-\caption{Métriques d'équité du baseline.}
 \end{table}
 
 \begin{leconbox}[Constat]
-Sur le \textbf{genre}, biais quasi nul après retrait de \texttt{personal\_status\_sex} (DI = 0.97).
-Sur l'\textbf{âge}, $|\Delta\text{DP}| = 0.125$ persiste et DI = 0.69 viole la règle US 80\,\%. C'est le \textbf{point d'alerte principal} pour un audit de conformité.
+Sur le genre, biais quasi nul après retrait de \texttt{personal\_status\_sex}. Sur l'âge, $|\Delta\text{DP}| = 0.125$ persiste et DI = 0.69 viole la règle US 80\,\%. Point d'alerte principal pour un audit de conformité.
+\end{leconbox}
+
+\subsubsection*{Audit sur les 3 variantes (V1, V2, V3)}
+
+On compare V1 = avec attributs sensibles, V2 = sans (baseline), V3 = sans + proxies univariés ($|r| > 0.15$) retirés.
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{Variante} & \textbf{Attribut} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ & \textbf{DI} \\
+\midrule
+V1 (avec sensibles) & Genre & 0.081 & 0.100 & 0.78 \\
+V1 (avec sensibles) & Âge   & 0.138 & 0.115 & 0.62 \\
+\midrule
+V2 (sans sensibles) & Genre & 0.010 & 0.058 & 0.97 \\
+V2 (sans sensibles) & Âge   & 0.125 & 0.066 & 0.69 \\
+\midrule
+\textbf{V3 (sans + proxies)} & Genre & 0.050 & 0.044 & 0.86 \\
+\textbf{V3 (sans + proxies)} & Âge   & \textbf{0.044} & \textbf{0.045} & \textbf{0.87} \\
+\bottomrule
+\end{tabular}
+\caption{Audit d'équité sur les 3 variantes du modèle, par attribut.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{../outputs/17_fairness_triple.png}
+\caption{Comparaison visuelle des 3 variantes par attribut sensible (gauche : genre, droite : âge). Pointillé rouge : seuil EEOC 80\,\%.}
+\end{figure}
+
+\begin{leconbox}[Sur l'âge, V3 fait passer DI au-dessus du seuil EEOC]
+Retirer les proxies divise par 3 le biais $|\Delta\text{DP}_{\text{age}}|$ (0.125 vers 0.044) et fait passer DI au-dessus du seuil légal pour la première fois (0.69 vers 0.87).
 \end{leconbox}
 
 \subsection{Audit intersectionnel}
-\label{sec:intersection}
-
-L'audit séparé peut masquer des biais combinés. On crée un attribut à 4 niveaux \texttt{genre\_age} :
 
 \begin{table}[H]
 \centering
@@ -220,10 +256,7 @@ female\_younger & 25  & 0.28 & 0.92 \\
 male\_younger   & 19  & \textbf{0.26} & 0.86 \\
 \bottomrule
 \end{tabular}
-\caption{Taux d'octroi par sous-groupe intersectionnel.}
 \end{table}
-
-Synthèse comparative :
 
 \begin{table}[H]
 \centering
@@ -236,35 +269,53 @@ Genre seul     & 0.010 & 0.058 & 0.97 \\
 \textbf{Intersectionnel} & \textbf{0.181} & \textbf{0.222} & \textbf{0.59} \\
 \bottomrule
 \end{tabular}
-\caption{Écarts d'équité : agrégés vs intersectionnel.}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/14_intersectional.png}
-\caption{Approval rate par sous-groupe (gauche, ligne rouge = seuil DI 80\,\% local) et écarts d'équité agrégés vs intersectionnel (droite).}
 \end{figure}
 
 \begin{leconbox}[Surprise]
-Les \textbf{male\_younger} (n = 19) ont le taux d'octroi le plus bas (0.26), \textbf{pas} les female\_younger (n = 25, 0.28) comme l'intuition initiale le suggérait. L'intersection multiplie le biais par 1.5 par rapport à l'analyse par axe seul.
+Les \emph{male\_younger} (n = 19) ont le taux d'octroi le plus bas (0.26), pas les \emph{female\_younger} comme l'intuition le suggérait. L'intersection multiplie le biais par 1.5 par rapport à l'analyse par axe seul.
 \end{leconbox}
+
+\subsubsection*{Intersectionnel sur les 3 variantes}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Variante} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ & \textbf{DI} \\
+\midrule
+V1 (avec sensibles)  & 0.207 & 0.222 & 0.44 \\
+V2 (sans sensibles)  & 0.181 & 0.222 & 0.59 \\
+V3 (sans + proxies)  & 0.221 & 0.243 & 0.48 \\
+\bottomrule
+\end{tabular}
+\caption{Audit intersectionnel (genre $\times$ âge) sur les 3 variantes.}
+\end{table}
+
+\begin{attentionbox}[{L'équité par attribut n'implique pas l'équité intersectionnelle}]
+Contrairement aux axes isolés, retirer les proxies n'améliore pas l'intersectionnel : V3 garde un DI = 0.48 (légèrement pire que V2). Les proxies retirés étaient utiles pour les sous-groupes minoritaires (jeunes femmes notamment). \textbf{L'équité intersectionnelle ne résulte pas mécaniquement de l'équité par attribut isolé.}
+\end{attentionbox}
 
 % ════════════════════════════════════════════════════════════════
 \section{Atténuation des biais}
 
 \subsection{Pré-traitement : reweighing (Kamiran \& Calders 2012)}
 
-On repondère chaque exemple pour rendre $S \perp Y$ dans la distribution pondérée :
-$$w_i = \frac{P(S = s_i) \cdot P(Y = y_i)}{P(S = s_i, Y = y_i)}$$
-
-Méthode model-agnostic : on ré-entraîne \texttt{LogisticRegression(sample\_weight=w)}, le code d'apprentissage est inchangé.
+L'idée de Kamiran \& Calders (2012) est de corriger le déséquilibre observé sur le train en pondérant chaque exemple par
+$$w_i = \frac{P(S = s_i) \cdot P(Y = y_i)}{P(S = s_i, Y = y_i)},$$
+ce qui revient à imposer l'indépendance statistique $S \perp Y$ \emph{a posteriori} sur les marges. La méthode est \emph{model-agnostic} : on ré-entraîne le même \texttt{LogisticRegression} en passant \texttt{sample\_weight=w}. Sur ce dataset, l'effet est limité (V2 : $|\Delta\text{DP}|$ âge passe de 0.125 à 0.132 ; le reweighing ne modifie pas significativement les frontières apprises), ce qui s'explique par le fait que la dépendance résiduelle $S \perp Y$ est faible une fois \texttt{personal\_status\_sex} retiré, et que les vrais leviers du biais sont les proxies multivariés que le reweighing ne touche pas.
 
 \subsection{Post-traitement : seuils par groupe (Hardt et al.\ 2016)}
 
-Au lieu d'un seuil global $\tau$, on calibre $\tau_g$ par groupe sensible sur la validation pour égaliser le taux de sélection cible (\emph{Demographic Parity}). Aucun ré-entraînement requis.
+L'approche post-traitement est plus directe : au lieu d'un seuil global $\tau$, on calibre un seuil $\tau_g$ par groupe sensible sur la validation, en l'ajustant pour égaliser le taux de sélection. Sur le baseline V2, cette procédure aboutit à $\tau_{\text{older}} = 0.16$ et $\tau_{\text{younger}} = 0.30$. Ce résultat peut sembler paradoxal puisqu'il \emph{augmente} le seuil pour les jeunes, mais il s'explique exactement par le déséquilibre observé : comme le taux de défaut de base est plus élevé chez les jeunes (42 \% vs 27 \%), à seuil global constant ils sont plus souvent refusés. Pour égaliser le taux d'octroi global, il faut accepter à score plus élevé chez les jeunes, ce qui revient à n'admettre que les meilleurs dossiers de ce groupe.
 
 \subsection{Comparaison des 4 configurations}
-\label{sec:compare}
+
+Le tableau ci-dessous met en regard les 4 configurations (baseline seul, reweighing seul, baseline + post-processing, reweighing + post-processing) sur le baseline V2. Les chiffres sont produits par la cellule \texttt{compare-cell} du notebook.
 
 \begin{table}[H]
 \centering
@@ -284,21 +335,48 @@ Genre & Reweighing + PP & 0.785 & 0.669 & 0.128 & 0.230 \\
 Âge   & Reweighing + PP & 0.784 & 0.650 & 0.069 & 0.221 \\
 \bottomrule
 \end{tabular}
-\caption{Performance et équité sur le test (PP = post-processing par seuils par groupe).}
-\label{tab:compare}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/02_tradeoff.png}
-\caption{Écarts d'équité (haut) et performance (bas) pour les 4 configurations sur les deux attributs sensibles.}
 \end{figure}
 
-\begin{attentionbox}[Théorème d'impossibilité \emph{en action}]
-Sur l'âge, le post-processing réduit $|\Delta\text{DP}|$ de \textbf{0.125 à 0.060} mais \textbf{double} $|\Delta\text{EO}|$ (0.066 vers 0.135). On ne peut pas atteindre les deux objectifs simultanément.
-
-Sur le genre, où le biais initial est négligeable, le post-processing introduit un biais artificiel : le seuil par groupe calibré sur 200 lignes de validation ne généralise pas au test.
+\begin{attentionbox}[{Théorème d'impossibilité \emph{en action}}]
+Sur l'âge, le post-processing réduit $|\Delta\text{DP}|$ de \textbf{0.125 à 0.060} mais \textbf{double} $|\Delta\text{EO}|$ (0.066 vers 0.135). Sur le genre où le biais initial est négligeable, le post-processing introduit un biais artificiel : le seuil par groupe calibré sur 200 lignes de validation ne généralise pas.
 \end{attentionbox}
+
+\subsubsection*{Comparaison 4 configurations $\times$ 3 variantes (cible : âge)}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{llccccc}
+\toprule
+\textbf{Variante} & \textbf{Configuration} & \textbf{AUC} & \textbf{BalAcc} & $|\Delta\text{DP}|$ & $|\Delta\text{EO}|$ & \textbf{DI} \\
+\midrule
+V1 & Baseline        & 0.781 & 0.656 & 0.138 & 0.115 & 0.62 \\
+V1 & Reweighing      & 0.777 & 0.674 & 0.112 & 0.057 & 0.71 \\
+V1 & Baseline + PP   & 0.781 & 0.633 & \textbf{0.027} & 0.121 & \textbf{0.92} \\
+V1 & Reweigh + PP    & 0.777 & 0.651 & 0.053 & 0.178 & 0.86 \\
+\midrule
+V2 & Baseline        & 0.785 & 0.669 & 0.125 & 0.066 & 0.69 \\
+V2 & Reweighing      & 0.784 & 0.640 & 0.132 & 0.098 & 0.63 \\
+V2 & Baseline + PP   & 0.785 & 0.644 & \textbf{0.060} & 0.135 & 0.86 \\
+V2 & Reweigh + PP    & 0.784 & 0.650 & 0.069 & 0.221 & 0.81 \\
+\midrule
+\textbf{V3} & \textbf{Baseline}        & \textbf{0.790} & 0.652 & \textbf{0.044} & \textbf{0.045} & \textbf{0.87} \\
+V3 & Reweighing      & 0.788 & 0.658 & 0.047 & 0.025 & 0.87 \\
+V3 & Baseline + PP   & 0.790 & 0.608 & 0.124 & 0.250 & 0.71 \\
+V3 & Reweigh + PP    & 0.788 & 0.604 & 0.140 & 0.225 & 0.69 \\
+\bottomrule
+\end{tabular}
+\caption{Toutes les configurations $\times$ les 3 variantes, sur l'attribut âge.}
+\end{table}
+
+\begin{leconbox}[V3 baseline est le meilleur état global]
+Sur V1 et V2, le PP corrige $|\Delta\text{DP}|$ au prix d'une hausse de $|\Delta\text{EO}|$ (théorème d'impossibilité). Sur V3, le PP est \emph{contre-productif} : il déborde de l'équilibre déjà atteint et fait remonter $|\Delta\text{DP}|$ de 0.044 à 0.124. Le meilleur compromis global reste \textbf{V3 baseline} sans intervention.
+\end{leconbox}
 
 % ════════════════════════════════════════════════════════════════
 \section{Interprétabilité}
@@ -306,91 +384,74 @@ Sur le genre, où le biais initial est négligeable, le post-processing introdui
 \subsection{SHAP global}
 
 Pour la régression logistique, les valeurs de Shapley admettent une expression exacte (Lundberg \& Lee 2017, Corollary 1) :
-$$\phi_i(x) = w_i \cdot (x_i - \mathbb{E}[x_i])$$
-
-Implémentation via \texttt{shap.LinearExplainer}. L'importance est l'agrégation $\frac{1}{n}\sum_x |\phi_i(x)|$.
+$$\phi_i(x) = w_i \cdot (x_i - \mathbb{E}[x_i]),$$
+où $w_i$ est le coefficient appris et $\mathbb{E}[x_i]$ la moyenne d'arrière-plan estimée sur le train. Cette forme close (\texttt{shap.LinearExplainer} avec \texttt{feature\_perturbation = "interventional"}) évite l'échantillonnage Monte Carlo et donne une décomposition exacte du logit prédit, additive sur les features et conservative ($f(x) = \phi_0 + \sum_i \phi_i$).
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.55\linewidth]{../outputs/03_shap.png}
-\caption{Top 10 features par Mean $|$SHAP$|$ sur le test.}
 \end{figure}
 
-Le modèle s'appuie sur des variables \emph{financières légitimes} : \texttt{checking\_status} (0.67), \texttt{credit\_history} (0.49), \texttt{installment\_rate} (0.39), \texttt{savings\_account\_bonds} (0.36). Variables démographiques absentes du top.
+Les quatre features dominantes en importance moyenne ($\overline{|\phi_i|}$) sont \texttt{checking\_status} (0.67), \texttt{credit\_history} (0.49), \texttt{installment\_rate} (0.39) et \texttt{savings\_account\_bonds} (0.36). Toutes sont des variables financières légitimes, et leur ordre est confirmé par la permutation importance (figure \texttt{04\_shap\_vs\_perm.png} du notebook), qui mesure la perte d'AUC lorsqu'on permute chaque feature.
 
 \subsection{SHAP local : explication individuelle}
 
-Décomposition de la prédiction d'un client unique. Utile pour répondre au \textbf{droit d'explication} (RGPD article 22).
+Le RGPD article 22 reconnaît aux personnes concernées un droit à une explication concernant les décisions automatisées qui les affectent. Le SHAP local répond à cette obligation en décomposant la prédiction individuelle en contributions additives par feature, ce qui permet de produire une justification fidèle au modèle, et non une rationalisation \emph{post hoc}.
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/09_shap_local.png}
-\caption{Contributions par feature pour deux clients : haut risque (gauche, score = 0.95) et bas risque (droite, score = 0.01).}
+\caption{SHAP local pour deux clients : haut risque à gauche (id 832), bas risque à droite (id 159). Barres rouges = contributions vers défaut, barres vertes = vers non-défaut.}
 \end{figure}
 
-Sur le client à haut risque (vrai défaut), les features qui poussent vers défaut sont \texttt{credit\_amount} (+1.18), \texttt{checking\_status} (+0.81), \texttt{duration\_in\_month} (+0.66). Le modèle peut donc justifier sa décision auprès du client.
+Pour le client à haut risque (id 832, score 0.95, vrai défaut), la prédiction est dominée par trois facteurs : \texttt{credit\_amount} = 14\,555 ($\phi$ = +1.18), \texttt{checking\_status} négatif ($\phi$ = +0.81) et \texttt{duration\_in\_month} = 45 mois ($\phi$ = +0.66). La somme de ces trois contributions explique l'écart entre le logit prédit et la valeur moyenne $\phi_0$. Pour le client à bas risque (id 159, score 0.01), toutes les contributions individuelles tirent vers le non-défaut (compte sain, historique impeccable, taux d'échéance bas, épargne disponible), et la décision est confortée. Cette lecture est directement utilisable dans une procédure de motivation des décisions algorithmiques.
 
-\subsection{Détection de proxies}
-\label{sec:proxies}
-
-Question : est-ce que les autres features encodent indirectement les attributs sensibles ?
-
-On entraîne une régression logistique \texttt{features $\to$ attribut sensible}. L'AUC mesure objectivement la prédictibilité de l'attribut depuis le reste.
-
-\begin{table}[H]
-\centering
-\begin{tabular}{lcl}
-\toprule
-\textbf{Attribut sensible} & \textbf{AUC proxy} & \textbf{Interprétation} \\
-\midrule
-Genre & 0.69          & signal proxy modéré \\
-\textbf{Âge} & \textbf{0.86} & \textbf{très fortement reconstructible} \\
-\bottomrule
-\end{tabular}
-\caption{Régression multivariée features vers attribut sensible.}
-\end{table}
-
-\begin{leconbox}[Recommandation Charlotte Laclau]
-Retirer \texttt{age\_in\_years} ne suffit pas à \og{} cacher \fg{} l'âge : il est encodé dans \texttt{housing}, \texttt{employment}, \texttt{job}\dots \textbf{Conserver l'attribut sensible} et l'utiliser explicitement comme pondération dans une mitigation in-processing serait théoriquement plus efficace (\emph{fairness through awareness}, Dwork et al.\ 2012).
-\end{leconbox}
-
-\subsection{Comparaison SHAP : avant vs après retrait}
-
-On entraîne deux modèles, l'un avec les attributs sensibles, l'autre sans. On compare la redistribution de l'importance SHAP par feature.
+\subsection{Comparaison SHAP avant vs après retrait}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/08_shap_compare.png}
-\caption{Top 12 features SHAP avec (bleu) vs sans (orange) attributs sensibles, et $\Delta$ SHAP (droite). Les barres vertes du panneau droit identifient les proxies absorbant l'effet retiré.}
 \end{figure}
 
-Top features absorbant l'effet : \texttt{present\_employment\_since} (+0.036), \texttt{telephone} (+0.022), \texttt{credit\_history} (+0.020). Confirmation graphique de l'AUC proxy = 0.86.
+Lorsqu'on compare le modèle V1 (avec attributs sensibles) au modèle V2 (sans), les features qui absorbent l'effet retiré sont identifiables par l'augmentation de leur SHAP : \texttt{present\_employment\_since} ($+0.036$), \texttt{telephone} ($+0.022$), \texttt{credit\_history} ($+0.020$). Cette redistribution est la signature observable de l'effet proxy, et confirme graphiquement le diagnostic quantitatif (AUC features $\to$ âge $=$ 0.86).
 
-\subsection{Performance avec vs sans attributs sensibles}
+\subsubsection*{SHAP sur les 3 variantes}
 
-Mesure du coût en performance et du gain en équité du retrait :
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{../outputs/18_shap_triple.png}
+\caption{Importance SHAP moyenne (top 12 features), comparée sur V1, V2, V3.}
+\end{figure}
+
+Les trois variantes pointent les mêmes features dominantes (\texttt{checking\_status}, \texttt{credit\_history}, \texttt{credit\_amount}), ce qui indique que le signal prédictif principal reste financier dans tous les cas. La redistribution s'observe sur les features de second rang : en passant de V1 à V3, l'importance migre depuis les proxies retirés (\texttt{housing}, \texttt{present\_employment\_since}, \texttt{job}) vers d'autres variables financières restées dans le modèle (\texttt{savings\_account\_bonds}, \texttt{installment\_rate}). En d'autres termes, V3 s'appuie davantage sur des features réellement explicatives et moins sur des variables potentiellement discriminatoires.
+
+\subsection{Performance et équité : avec / sans / sans + proxies}
+\label{sec:perf-3}
+
+Le tableau ci-dessous récapitule, pour chacune des trois variantes, la performance globale et l'équité sur l'attribut âge (le seul des deux à présenter un biais significatif).
 
 \begin{table}[H]
 \centering
-\begin{tabular}{lcccc}
+\begin{tabular}{lccccc}
 \toprule
-\textbf{Modèle} & \textbf{AUC} & \textbf{BalAcc} & $|\Delta\text{DP}_{\text{age}}|$ & \textbf{DI}$_{\text{age}}$ \\
+\textbf{Modèle} & \textbf{AUC} & \textbf{BalAcc} & $|\Delta\text{DP}_{\text{age}}|$ & $|\Delta\text{EO}_{\text{age}}|$ & \textbf{DI}$_{\text{age}}$ \\
 \midrule
-Avec attr. sensibles            & 0.781 & 0.660 & 0.110 & 0.69 \\
-Sans attr. sensibles (baseline) & 0.785 & 0.669 & 0.125 & 0.69 \\
+Avec attributs sensibles            & 0.781 & 0.656 & 0.138 & 0.115 & 0.62 \\
+Sans attributs sensibles (baseline) & 0.785 & 0.669 & 0.125 & 0.066 & 0.69 \\
+\textbf{Sans sensibles + proxies}   & \textbf{0.790} & 0.652 & \textbf{0.044} & \textbf{0.045} & \textbf{0.87} \\
 \bottomrule
 \end{tabular}
-\caption{Comparaison performance et équité du retrait des attributs sensibles.}
+\caption{Triple comparaison : performance et équité selon le retrait progressif des features.}
 \end{table}
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.85\linewidth]{../outputs/16_metrics_with_vs_without.png}
-\caption{Comparaison performance (gauche) et équité âge (droite) avec vs sans attributs sensibles.}
+\includegraphics[width=0.85\linewidth]{../outputs/16_metrics_triple.png}
+\caption{Performance (gauche, plus haut = mieux) et équité âge (droite, plus bas = mieux) selon les trois variantes.}
 \end{figure}
 
-\begin{leconbox}[Le retrait est cosmétique, pas correctif]
-Le coût en performance est négligeable ($\Delta$ AUC = 0.004) et l'équité ne s'améliore pas (DI âge reste à 0.69). Sans intervention active (reweighing, post-processing, fairness through awareness), retirer la colonne sensible ne corrige pas le biais.
+\begin{leconbox}[Résultat marquant]
+Retirer également les proxies identifiés \emph{améliore} l'AUC ($+0.005$) et fait passer DI âge de 0.69 à \textbf{0.87}, au-dessus du seuil légal EEOC ; $|\Delta\text{DP}_{\text{age}}|$ chute de 0.125 à 0.044. Ce gain conjoint en performance et en équité est une exception au compromis habituel : les proxies retirés portaient un signal corrélé au biais sans apporter de valeur prédictive substantielle, et leur suppression revient à diminuer la sur-paramétrisation du modèle. Sur un autre dataset, ce résultat pourrait ne pas se reproduire et il faudrait alors arbitrer explicitement entre performance et équité.
 \end{leconbox}
 
 % ════════════════════════════════════════════════════════════════
@@ -398,9 +459,7 @@ Le coût en performance est négligeable ($\Delta$ AUC = 0.004) et l'équité ne
 
 \subsection{Bootstrap}
 
-\textbf{Choix méthodologique} : sur conseil de l'enseignante, la robustesse adversariale demandée par le sujet est remplacée par une quantification d'incertitude par bootstrap (cf.\ cours \textit{Robustness and Uncertainty}, G.~Franchi).
-
-On entraîne $B = 200$ régressions logistiques sur des échantillons bootstrap (Efron 1979) du train. Pour chaque modèle, on calcule les métriques sur le test, puis on agrège par quantiles 2.5\,\%/97.5\,\%.
+Suite au conseil de l'enseignante, le volet robustesse adversariale du sujet est remplacé par une quantification d'incertitude statistique via bootstrap. On entraîne $B = 500$ régressions logistiques sur des ré-échantillonnages avec remise du train (Efron 1979), puis on agrège les métriques par quantiles. Cette approche ne couvre pas toute l'incertitude de généralisation (le test reste fixe) mais elle quantifie précisément la sensibilité des conclusions au tirage de l'échantillon d'entraînement.
 
 \begin{table}[H]
 \centering
@@ -408,91 +467,118 @@ On entraîne $B = 200$ régressions logistiques sur des échantillons bootstrap 
 \toprule
 \textbf{Métrique} & \textbf{Moyenne} & $\sigma$ & \textbf{IC 2.5\,\%} & \textbf{IC 97.5\,\%} \\
 \midrule
-AUC                       & 0.764 & 0.019 & 0.723 & 0.795 \\
-BalAcc                    & 0.682 & 0.023 & 0.637 & 0.726 \\
-$|\Delta\text{DP}|$ genre & 0.035 & 0.028 & 0.001 & 0.105 \\
-$|\Delta\text{EO}|$ genre & 0.089 & 0.044 & 0.017 & 0.176 \\
-$|\Delta\text{DP}|$ âge   & 0.104 & 0.046 & 0.020 & 0.202 \\
-$|\Delta\text{EO}|$ âge   & 0.086 & 0.048 & 0.018 & 0.194 \\
+AUC                       & 0.764 & 0.020 & 0.724 & 0.798 \\
+BalAcc                    & 0.681 & 0.023 & 0.636 & 0.724 \\
+$|\Delta\text{DP}|$ genre & 0.035 & 0.027 & 0.001 & 0.104 \\
+$|\Delta\text{EO}|$ genre & 0.089 & 0.042 & 0.020 & 0.177 \\
+DI genre                  & 0.92  & 0.060 & 0.78  & 1.00  \\
+$|\Delta\text{DP}|$ âge   & 0.103 & 0.050 & 0.008 & 0.205 \\
+$|\Delta\text{EO}|$ âge   & 0.087 & 0.050 & 0.021 & 0.195 \\
+DI âge                    & 0.77  & 0.109 & 0.56  & 0.98  \\
 \bottomrule
 \end{tabular}
-\caption{Intervalles de confiance bootstrap ($B = 200$).}
+\caption{Bootstrap $B = 500$ sur le baseline V2 (sans attributs sensibles).}
 \end{table}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/05_bootstrap.png}
-\caption{Distributions bootstrap : AUC (gauche), équité genre (centre), équité âge (droite).}
 \end{figure}
 
-\begin{attentionbox}[Lecture critique]
-L'IC 95\,\% de $|\Delta\text{DP}|$ âge va de \textbf{0.02 à 0.20}. Le biais empirique (0.125) est dans cet IC, mais l'incertitude est plus large que la valeur. Annoncer \og{} biais $|\Delta\text{DP}| = 0.125$ \fg{} sans préciser \og{} $\pm 0.10$ \fg{} serait trompeur.
+\begin{attentionbox}[{Lecture critique}]
+L'IC 95\,\% de $|\Delta\text{DP}|$ âge va de \textbf{0.01 à 0.21}. Le biais empirique (0.125) est dans cet IC, mais l'incertitude est plus large que la valeur. Annoncer \og{} biais $|\Delta\text{DP}| = 0.125$ \fg{} sans préciser \og{} $\pm 0.10$ \fg{} serait trompeur.
 \end{attentionbox}
 
-\subsection{Intervalles de prédiction par individu}
-
-Pour chaque ligne du test, on agrège les $B$ scores en moyenne et écart-type. Une forte variance signale un client \textbf{sur la frontière de décision}.
+\subsection{Intervalle de prédiction sur un client unique}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/06_indiv_uncertainty.png}
-\caption{Intervalles de prédiction par individu (gauche) et incertitude vs score (droite). La forme parabolique confirme que l'incertitude est maximale au milieu (cas frontières).}
+\caption{À gauche : intervalle de confiance bootstrap par individu, trié par score moyen. À droite : écart-type bootstrap en fonction du score moyen, coloré par la part des modèles qui prédisent défaut.}
 \end{figure}
 
-Les 10 individus les plus incertains ont des écarts-type bootstrap de 0.20--0.24. Le candidat le plus incertain (id = 236) a un score moyen de 0.39 mais un IC de [0.03, 0.85] : selon le tirage du jeu d'entraînement, ce client serait soit accepté, soit refusé. Une expertise humaine est recommandée pour ces cas.
+L'analyse individuelle prolonge le bootstrap global au niveau du dossier : pour chaque client, on calcule la moyenne, l'écart-type et l'IC 95 \% des scores prédits par les $B$ modèles, ainsi que la part des modèles qui classent ce client en défaut ($p_{\text{décision défaut}}$). Le panneau de gauche montre la forme attendue (l'incertitude est maximale au voisinage du seuil de décision et diminue aux extrêmes), et le panneau de droite met en évidence la parabole d'incertitude caractéristique. Le notebook isole ensuite les 10 dossiers \emph{sensibles}, définis comme ceux dont l'IC bootstrap traverse le seuil $\tau$ ; pour ces clients, une décision purement automatique est instable et une revue humaine est recommandée.
+
+\subsection{Bootstrap sur les 3 variantes}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llccc}
+\toprule
+\textbf{Variante} & \textbf{Métrique} & \textbf{Moyenne} & \textbf{IC 2.5\,\%} & \textbf{IC 97.5\,\%} \\
+\midrule
+V1 (avec sensibles) & AUC                  & 0.764 & 0.721 & 0.796 \\
+V1 (avec sensibles) & $|\Delta\text{DP}|$ âge & 0.126 & 0.024 & 0.230 \\
+V1 (avec sensibles) & $|\Delta\text{EO}|$ âge & 0.111 & 0.026 & 0.239 \\
+\midrule
+V2 (sans sensibles) & AUC                  & 0.765 & 0.727 & 0.795 \\
+V2 (sans sensibles) & $|\Delta\text{DP}|$ âge & 0.102 & 0.013 & 0.199 \\
+V2 (sans sensibles) & $|\Delta\text{EO}|$ âge & 0.086 & 0.022 & 0.188 \\
+\midrule
+\textbf{V3 (sans + proxies)} & AUC                  & 0.768 & 0.728 & 0.799 \\
+\textbf{V3 (sans + proxies)} & $|\Delta\text{DP}|$ âge & \textbf{0.046} & \textbf{0.004} & \textbf{0.127} \\
+\textbf{V3 (sans + proxies)} & $|\Delta\text{EO}|$ âge & 0.086 & 0.025 & 0.175 \\
+\bottomrule
+\end{tabular}
+\caption{Bootstrap $B = 100$ sur les 3 variantes. Cible : âge.}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{../outputs/19_bootstrap_triple.png}
+\caption{Distributions bootstrap des 3 variantes. AUC : largement chevauchantes (pas de coût significatif). $|\Delta\text{DP}|$ âge : V3 nettement plus bas et plus serré.}
+\end{figure}
+
+\begin{leconbox}[V3 plus stable que V2 et V1]
+Sur l'AUC, les 3 distributions se recouvrent : retirer les attributs sensibles puis les proxies n'a pas de coût statistiquement significatif. Sur $|\Delta\text{DP}|$ âge, V3 a l'IC 95\,\% le plus serré et le plus bas. \textbf{V3 est préférable à la fois en moyenne (biais plus faible) et en stabilité statistique (IC plus serré).}
+\end{leconbox}
 
 % ════════════════════════════════════════════════════════════════
-\section{Tableau de bord récapitulatif}
+\section{Synthèse fairness et conclusion}
 
 \begin{figure}[H]
 \centering
 \includegraphics[width=0.95\linewidth]{../outputs/12_dashboard.png}
-\caption{Synthèse des métriques clés du baseline. Ligne pointillée rouge = seuil DI 80\,\% (EEOC).}
+\caption{Tableau de bord récapitulatif du baseline V2. Ligne pointillée rouge : seuil DI 80~\% (EEOC).}
 \end{figure}
 
-\begin{leconbox}[Synthèse]
-\textbf{Point d'alerte unique} : DI âge = 0.69, sous le seuil légal US 0.8 (règle EEOC). C'est l'élément à signaler prioritairement dans un audit de conformité. Tout le reste (performance, équité genre, calibration) est dans les marges acceptables.
-\end{leconbox}
+\subsection{Reproductibilité méthodologique}
 
-% ════════════════════════════════════════════════════════════════
-\section{Conclusion}
-\label{sec:conclusion}
+Le but de cette section n'est pas de décrire comment ré-exécuter ce notebook --- la commande tient en une ligne et \texttt{random\_state} est fixé partout --- mais de montrer que le canevas suivi est transférable à n'importe quel projet de classification binaire avec attributs sensibles. La démarche est conçue pour qu'un praticien puisse la réappliquer à un cas d'usage différent (scoring assurance, recrutement, allocation d'aides sociales, justice prédictive, scoring santé) en remplaçant essentiellement le dataset et la définition des attributs sensibles, sans avoir à réinventer la structure de l'audit.
 
-\subsection{Résultats principaux}
+Le canevas en 8 étapes : (i) identification des attributs sensibles et préparation des splits stratifiés ; (ii) audit du baseline en performance, équité par attribut et intersectionnel ; (iii) détection des proxies par corrélation univariée et régression multivariée features $\to$ attribut sensible ; (iv) comparaison de trois variantes V1 (avec sensibles), V2 (sans), V3 (sans + proxies) ; (v) évaluation des méthodes d'atténuation classiques (pré-traitement par reweighing, post-traitement par seuils par groupe) ; (vi) interprétabilité globale et locale ; (vii) quantification d'incertitude par bootstrap au niveau global et individuel ; (viii) synthèse et parcours décisionnel motivé.
 
-\begin{enumerate}[itemsep=0.4em]
-    \item \textbf{Modèle.} Régression logistique L2, AUC = 0.785, BalAcc = 0.669. Convergence en 6 itérations.
+Trois catégories de choix interviennent dans ce canevas et il faut les distinguer pour le transférer correctement. Les \emph{choix universels} gardent la même forme d'un projet à l'autre et constituent le squelette de la démarche : la structure en 8 étapes, le triptyque V1/V2/V3, l'utilisation conjointe de $|\Delta\text{DP}|$, $|\Delta\text{EO}|$ et DI, l'audit intersectionnel, le diagnostic des proxies par AUC features $\to$ attribut sensible, et le bootstrap pour quantifier l'incertitude. Les \emph{choix dépendants du domaine} doivent être révisés à chaque nouvelle application : la définition opérationnelle des attributs sensibles (ici, seuil 25 ans pour l'âge, suivant Kamiran \& Calders 2012) ; la matrice de coûts métier (ici, $5 \cdot \text{FN} + 1 \cdot \text{FP}$, documentée par UCI) ; le seuil légal de référence (ici, EEOC 80~\%, mais d'autres juridictions retiennent d'autres seuils) ; le critère d'équité prioritaire (DP pour la conformité légale, EO pour la justice individuelle, le choix dépend du contexte réglementaire et opérationnel). Les \emph{choix dépendants du dataset} doivent être recalibrés à chaque jeu particulier : le seuil de corrélation pour la détection de proxies ($|r| > 0.15$ ici, à ajuster selon la dimensionnalité et le bruit) ; la taille $B$ du bootstrap (500 ici, à augmenter sur des datasets plus grands ou plus rapides à entraîner) ; la famille du modèle baseline (régression logistique ici parce que Linear SHAP est exact, à remplacer par un Random Forest ou un Gradient Boosting si la non-linéarité est attendue, avec TreeSHAP en remplacement).
 
-    \item \textbf{Forte présence de proxies multivariés} (approche Charlotte). La régression \texttt{features $\to$ âge} atteint AUC = 0.86 ; \texttt{features $\to$ genre} atteint AUC = 0.69. Retirer les attributs sensibles ne les cache pas, leur effet se redistribue (vérifié visuellement par SHAP avant/après, voir \S5.4 et \S5.5 dans le notebook).
+La conclusion principale du projet --- V3 améliore simultanément performance et équité par attribut isolé sans intervention in/post-modèle, mais ne résout pas le résidu intersectionnel --- est elle aussi spécifique à ce dataset. Sur un autre cas d'usage, l'arbitrage pourrait basculer : V3 pourrait coûter beaucoup en performance si les proxies portent du signal prédictif utile, ou ne rien améliorer en équité si le biais est de nature non-proxy (par exemple porté par la définition même de la cible). Ce qui est transférable, c'est le fait de toujours comparer V1, V2 et V3 explicitement plutôt que de supposer \emph{a priori} l'effet d'un retrait, et de quantifier le résultat avec ses intervalles de confiance avant de conclure.
 
-    \item \textbf{Discrimination sur l'âge plus marquée que sur le genre.} $|\Delta\text{DP}|$ âge = 0.125, DI = 0.69 (sous seuil légal US 0.8). Audit intersectionnel : $|\Delta\text{DP}| = 0.181$ (1.5$\times$ plus fort) ; les jeunes hommes (n = 19) sont les plus défavorisés.
+\subsection{Bilan des résultats}
 
-    \item \textbf{Théorème d'impossibilité confirmé empiriquement.} PP réduit $|\Delta\text{DP}|$ âge (0.125 vers 0.060) mais double $|\Delta\text{EO}|$ (0.066 vers 0.135).
+\paragraph{Performance.} Le baseline V2 (régression logistique L2) atteint sur le test AUC = 0.785, balanced accuracy = 0.669 et average precision = 0.607, avec une convergence en 6 itérations. La matrice de coûts asymétrique documentée par UCI ($5 \cdot \text{FN} + 1 \cdot \text{FP}$) ancre le choix du seuil de classification dans la réalité bancaire.
 
-    \item \textbf{Significativité statistique faible.} Bootstrap : IC 95\,\% de $|\Delta\text{DP}|$ âge = $[0.02, 0.20]$. Sur 1000 lignes, les conclusions sur l'équité doivent être nuancées par cette incertitude.
+\paragraph{Équité par attribut isolé.} Sur le genre, le biais est quasi nul après retrait de \texttt{personal\_status\_sex} ($|\Delta\text{DP}| = 0.010$, DI = 0.97). Sur l'âge, en revanche, le biais persiste : $|\Delta\text{DP}| = 0.125$ et DI = 0.69, soit sous le seuil légal US 0.8. L'audit intersectionnel multiplie ce biais par environ 1.5 ($|\Delta\text{DP}| = 0.181$, DI = 0.59), avec les jeunes hommes (n = 19) comme sous-groupe le plus défavorisé, contre-intuitivement.
 
-    \item \textbf{Le retrait des attributs n'est pas une mitigation.} AUC quasi inchangée (0.785 sans vs 0.781 avec) et DI âge reste à 0.69 dans les deux cas. Une intervention active est nécessaire.
-\end{enumerate}
+\paragraph{Comparaison des trois variantes.} La performance est strictement préservée par les retraits successifs (V1 = 0.781, V2 = 0.785, V3 = 0.790). Sur l'âge, $|\Delta\text{DP}|$ chute de 0.138 (V1) à 0.125 (V2) puis à 0.044 (V3), et DI passe de 0.62 à 0.69 puis à 0.87, au-dessus du seuil EEOC pour la première fois. Sur l'intersection genre $\times$ âge, le résultat est moins net : V3 ne fait pas mieux que V1 (DI = 0.48 contre 0.44), ce qui indique que l'équité intersectionnelle ne résulte pas mécaniquement de l'équité par attribut isolé.
 
-\subsection{Choix méthodologiques}
+\paragraph{Atténuation classique.} Le reweighing a un effet limité sur V1 et V2, et nul sur V3 dont les marges sont déjà équilibrées. Les seuils par groupe (post-processing) réduisent $|\Delta\text{DP}|$ sur V1 et V2 au prix d'une hausse de $|\Delta\text{EO}|$ (théorème d'impossibilité). Sur V3, ce même post-processing devient contre-productif : il fait remonter $|\Delta\text{DP}|$ de 0.044 à 0.124, parce qu'il force le modèle à s'écarter d'un équilibre déjà atteint pour viser une cible (égalité stricte des taux de sélection) que le baseline ne nécessitait plus.
 
-\begin{itemize}
-    \item Robustesse adversariale du sujet remplacée par \textbf{bootstrap} (conseil de l'enseignante).
-    \item Coût métier UCI ($5 \cdot \text{FN} + 1 \cdot \text{FP}$) pour ancrer le choix de seuil dans la réalité bancaire.
-\end{itemize}
+\paragraph{Atténuation par retrait des proxies.} L'AUC de la régression features $\to$ âge atteint 0.86, ce qui démontre que retirer seulement \texttt{age\_in\_years} laisse subsister un signal proxy multivarié majeur. Le retrait additionnel des 17 features avec $|r| > 0.15$ produit V3, qui constitue le meilleur compromis global : meilleure AUC, meilleure équité par attribut isolé, et plus grande stabilité statistique, sans intervention in-modèle ni post-modèle.
+
+\paragraph{Interprétabilité.} SHAP global et permutation importance concordent sur les trois variantes en désignant les mêmes variables financières dominantes (\texttt{checking\_status}, \texttt{credit\_history}, \texttt{installment\_rate}, \texttt{savings\_account\_bonds}). SHAP local décompose chaque décision en contributions par feature et fournit le matériau d'une motivation conforme à l'article 22 du RGPD.
+
+\paragraph{Quantification d'incertitude.} Le bootstrap $B = 500$ sur V2 donne un IC 95~\% sur l'AUC de $[0.72, 0.80]$ et sur $|\Delta\text{DP}_{\text{age}}|$ de $[0.01, 0.21]$ : l'incertitude est plus large que la valeur ponctuelle, ce qui doit modérer toute conclusion. Le bootstrap $B = 100$ sur les trois variantes confirme que V3 est préférable à la fois en moyenne (biais central plus bas) et en stabilité (IC le plus serré, $[0.004, 0.127]$).
+
+\subsection{Parcours décisionnel}
+
+L'enchaînement des méthodes appliqué dans ce projet peut se résumer comme suit. On commence par auditer le baseline V2 et on détecte une alerte sur l'âge ($|\Delta\text{DP}_{\text{age}}| = 0.125$, DI = 0.69, sous le seuil légal). L'audit intersectionnel localise le biais sur le sous-groupe \emph{male\_younger} (n = 19), et la détection de proxies montre que retirer les attributs sensibles ne suffira pas (AUC features $\to$ âge = 0.86, 17 proxies univariés actifs). On construit alors V3 en retirant ces proxies, et la comparaison V1 vs V2 vs V3 confirme que V3 réduit $|\Delta\text{DP}_{\text{age}}|$ à 0.044 sans coût de performance. Les méthodes d'atténuation classiques (reweighing et post-processing) sont testées sur V3 par souci d'exhaustivité, mais elles s'avèrent inutiles ou contre-productives, parce que V3 est déjà à l'équilibre. Un dernier audit intersectionnel sur V3 met en évidence un résidu non résolu (DI = 0.48), qui appelle une décision explicite : accepter ce résidu, ou ajouter une mitigation in-modèle spécifique aux sous-groupes (non implémentée ici). Le bootstrap confirme finalement la robustesse statistique de la conclusion, et SHAP local fournit l'outil de motivation des décisions individuelles requis par le RGPD.
 
 \subsection{Limites}
 
-\begin{itemize}
-    \item \textbf{Petit dataset} (1000 lignes, test 200) : IC 95\,\% des écarts d'équité dépassent 0.15.
-    \item \textbf{Approche linéaire} : capacité limitée à capturer des interactions non linéaires.
-    \item \textbf{Reweighing simple} : on ne traite qu'une dépendance binaire $S \perp Y$. Des méthodes plus avancées (\texttt{fairlearn.ExponentiatedGradient}, transport optimal) pourraient mieux gérer les contraintes.
-    \item \textbf{Pas de \emph{fairness through awareness} implémentée}, malgré l'AUC proxy = 0.86 qui la justifierait. Piste pour une suite.
-\end{itemize}
+L'étude porte sur un dataset historiquement utilisé pour ce type d'évaluation mais de taille réduite (1000 lignes, test 200), ce qui produit des IC 95~\% sur l'équité dépassant souvent 0.15 ; cette incertitude doit être communiquée explicitement avec toute conclusion. L'approche reste linéaire (régression logistique), avec une capacité limitée à capturer des interactions non linéaires entre features. Le reweighing utilisé ne traite qu'une dépendance binaire $S \perp Y$ et serait à généraliser pour un cadre multi-attribut. Le retrait massif de 17 proxies en V3 est une stratégie agressive : sur un autre dataset, ces features pourraient porter du signal prédictif utile et leur suppression dégraderait la performance. L'intersection genre $\times$ âge reste non résolue par V3, ce qui montre les limites d'une approche fondée uniquement sur l'équité par attribut. Enfin, la Fairness through Awareness (Dwork et al.\ 2012), qui aurait été pertinente compte tenu de l'AUC proxy = 0.86, n'a pas été implémentée.
 
-\subsection{Outils d'assistance utilisés}
+\subsection{Recommandations pour un déploiement réel}
 
-Conformément à l'exigence du sujet, des LLM (Claude, GPT) ont été utilisés pour : aide à la rédaction du code (pipeline sklearn, intégration fairlearn/shap), structuration du notebook et du rapport. Les décisions méthodologiques (choix des métriques, interprétation, conception du bootstrap) ont été prises et discutées en équipe.
+Pour un usage opérationnel sur ce dataset, nous recommandons d'adopter V3 (sans attributs sensibles, sans les 17 proxies univariés $|r| > 0.15$) comme baseline, car elle constitue le meilleur compromis performance/équité par attribut et présente la plus grande stabilité statistique. Le post-processing correctif ne doit pas être appliqué sur V3, sous peine de dégrader l'équité. Le résidu intersectionnel (DI $\approx 0.48$) doit être documenté et accompagné d'une procédure de revue manuelle pour les sous-groupes minoritaires. Le critère d'équité prioritaire (DP pour la conformité EEOC, EO pour la justice individuelle) doit être choisi explicitement et fixé contractuellement avant déploiement. Les dossiers pour lesquels l'IC bootstrap traverse le seuil de décision (\texttt{traverse\_seuil = True} dans le notebook) doivent systématiquement déclencher une expertise humaine. L'analyse intersectionnelle gagnerait à être reproduite sur un dataset plus grand pour confirmer les conclusions sur les sous-groupes minoritaires.
 
 % ════════════════════════════════════════════════════════════════
 \section*{Références}
@@ -503,14 +589,14 @@ Conformément à l'exigence du sujet, des LLM (Claude, GPT) ont été utilisés 
 \bibitem{chouldechova2017} A.~Chouldechova, \textit{Fair prediction with disparate impact}, Big Data 5(2), 2017. \href{https://arxiv.org/abs/1703.00056}{arXiv:1703.00056}.
 \bibitem{kleinberg2017} J.~Kleinberg, S.~Mullainathan, M.~Raghavan, \textit{Inherent trade-offs in the fair determination of risk scores}, ITCS 2017. \href{https://arxiv.org/abs/1609.05807}{arXiv:1609.05807}.
 \bibitem{hardt2016} M.~Hardt, E.~Price, N.~Srebro, \textit{Equality of Opportunity in Supervised Learning}, NeurIPS 2016. \href{https://arxiv.org/abs/1610.02413}{arXiv:1610.02413}.
-\bibitem{kamiran2012} F.~Kamiran, T.~Calders, \textit{Data preprocessing techniques for classification without discrimination}, KAIS 33(1), 2012. \href{https://doi.org/10.1007/s10115-011-0463-8}{doi:10.1007/s10115-011-0463-8}.
+\bibitem{kamiran2012} F.~Kamiran, T.~Calders, \textit{Data preprocessing techniques for classification without discrimination}, KAIS 33(1), 2012. \href{https://doi.org/10.1007/s10115-011-0463-8}{doi}.
 \bibitem{dwork2012} C.~Dwork et al., \textit{Fairness through awareness}, ITCS 2012. \href{https://arxiv.org/abs/1104.3913}{arXiv:1104.3913}.
 \bibitem{bellamy2018} R.~K.~E.~Bellamy et al., \textit{AI Fairness 360}, IBM, 2018. \href{https://arxiv.org/abs/1810.01943}{arXiv:1810.01943}.
-\bibitem{bird2020} S.~Bird et al., \textit{Fairlearn: a toolkit for assessing and improving fairness in AI}, Microsoft 2020. \href{https://fairlearn.org/}{fairlearn.org}.
+\bibitem{bird2020} S.~Bird et al., \textit{Fairlearn}, Microsoft 2020. \href{https://fairlearn.org/}{fairlearn.org}.
 \bibitem{lundberg2017} S.~Lundberg, S.-I.~Lee, \textit{A Unified Approach to Interpreting Model Predictions}, NeurIPS 2017. \href{https://arxiv.org/abs/1705.07874}{arXiv:1705.07874}. Linear SHAP : Corollary 1.
-\bibitem{efron1979} B.~Efron, \textit{Bootstrap methods}, Annals of Statistics 7(1), 1979. \href{https://doi.org/10.1214/aos/1176344552}{doi:10.1214/aos/1176344552}.
+\bibitem{efron1979} B.~Efron, \textit{Bootstrap methods}, Annals of Statistics 7(1), 1979.
 \bibitem{lakshminarayanan2017} B.~Lakshminarayanan et al., \textit{Deep Ensembles}, NeurIPS 2017. \href{https://arxiv.org/abs/1612.01474}{arXiv:1612.01474}.
-\bibitem{pedregosa2011} F.~Pedregosa et al., \textit{Scikit-learn: Machine Learning in Python}, JMLR 12, 2011. \href{https://www.jmlr.org/papers/v12/pedregosa11a.html}{jmlr.org}.
+\bibitem{pedregosa2011} F.~Pedregosa et al., \textit{Scikit-learn}, JMLR 12, 2011.
 \bibitem{cours} Cours IA708, F.~d'Alché-Buc, C.~Laclau, G.~Franchi, Télécom Paris.
 \end{thebibliography}
 }
