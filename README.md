@@ -1,234 +1,114 @@
-# German Credit - IA responsable
+# Responsible AI, German Credit Dataset
 
-Ce dépôt regroupe un projet de scoring de crédit sur le dataset UCI German Credit. Le travail est organisé autour de trois questions:
+IA708 project, Télécom Paris, 2026.
 
-- comment obtenir un modèle utile sur un dataset tabulaire déséquilibré;
-- comment mesurer et corriger les écarts d'équité entre groupes;
-- comment expliquer les décisions et encadrer l'incertitude.
+> French version: [README.fr.md](README.fr.md)
 
-Le coeur du projet est dans `julien/`. Le dépôt est notebook-first: le notebook et le rapport PDF sont les deux points d'entrée principaux.
+## Team
 
-## A lire en premier
+- Julien GIMENEZ <julien.gimenez@telecom-paris.fr>
+- Hugo FANCHINI <hugo.fanchini@telecom-paris.fr>
+- Paul CINTRA <paul.cintra@telecom-paris.fr>
+- Yimou ZHANG <yimou.zhang@telecom-paris.fr>
+- Zaher HAMADEH <zaher.hamadeh@telecom-paris.fr>
 
-- `julien/responsiveAI-german-credit_light.ipynb` : notebook principal.
-- `julien/responsiveAI-german-credit_rapport.pdf` : rapport compilé.
-- `julien/responsiveAI-german-credit_rapport.tex` : source LaTeX du rapport.
-- `julien/requirements.txt` : dépendances Python pour rejouer le notebook.
+## Contents of this folder
 
-## Arborescence utile
+| File | Role |
+|------|------|
+| `responsiveAI-german-credit_rendu.ipynb` | Main notebook (12 sections, 92 cells) |
+| `responsiveAI-german-credit_rapport.pdf` | Long pedagogical report (~30 pages) |
+| `responsiveAI-german-credit_rapport.tex` | Report source code |
+| `responsiveAI-german-credit_rapport_compile.sh` | Report compile script (LaTeX, 2 passes) |
+| `responsibleAI-4.pdf` | Project assignment |
+| `requirements.txt` | Python dependencies |
+| `data/` | UCI German Credit raw data |
 
-```text
-.
-├── README.md
-├── data/
-│   └── raw/german.data
-├── doc/
-│   ├── german.pdf
-│   ├── responsibleAI-4.pdf
-│   └── todo_team.txt
-└── julien/
-    ├── data/raw/german.data
-    ├── requirements.txt
-    ├── responsiveAI-german-credit_light.ipynb
-    ├── responsiveAI-german-credit_rapport.tex
-    ├── responsiveAI-german-credit_rapport.pdf
-    └── responsiveAI-german-credit_rapport_compile.sh
+The PDF report is the primary written deliverable. The notebook contains the full computational pipeline and reproduces every number cited in the report.
+
+## Subject
+
+Audit of a credit scoring model (UCI German Credit, 1000 rows) along the three axes of `responsibleAI-4.pdf`:
+
+- **Fairness**: audit (DP, EO, Disparate Impact), intersectional audit (gender × age), pre-processing reweighing (Kamiran & Calders 2012), per-group post-processing thresholds (Hardt et al. 2016), `fairlearn ThresholdOptimizer`.
+- **Interpretability**: SHAP global and local (`LinearExplainer`, exact for logistic regression), permutation importance, proxy detection (univariate correlation and multivariate logistic regression), SHAP comparison with vs without sensitive attributes.
+- **Uncertainty quantification**: bootstrap confidence intervals (B = 500 on baseline, B = 100 on three model variants).
+
+Per the instructor's recommendation, the adversarial robustness axis from the assignment is replaced by uncertainty quantification via bootstrap.
+
+## Three model variants
+
+The whole study compares three versions of the model side by side:
+
+- **V1** — with sensitive attributes (`gender`, `age_in_years`)
+- **V2** — without sensitive attributes (baseline)
+- **V3** — without sensitive attributes AND without univariate proxies (`|r| > 0.15`)
+
+V3 is the main result: it improves both performance (AUC 0.785 → 0.790) and equity per attribute (DI age 0.69 → 0.87, above the EEOC threshold) without any in/post-model intervention. The intersectional bias (gender × age, DI = 0.48) remains unresolved.
+
+## Stack
+
+- [`scikit-learn`](https://scikit-learn.org/) — models, metrics, pipelines, permutation importance
+- [`fairlearn`](https://fairlearn.org/) — `MetricFrame`, `demographic_parity_difference`, `equalized_odds_difference`, `ThresholdOptimizer`
+- [`shap`](https://shap.readthedocs.io/) — `LinearExplainer` (exact form for linear models)
+- `pandas`, `numpy`, `matplotlib`
+- `papermill` for reproducible execution
+
+## Installation
+
+```bash
+pip install -r requirements.txt
 ```
 
-Le notebook lit `data/raw/german.data`. Une copie du même fichier existe aussi dans `julien/data/raw/german.data` si vous préférez travailler depuis ce dossier.
+The `german.data` file must be present in `data/raw/` (downloadable from [UCI](https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data)).
 
-## Données et objectif
+## Running the notebook
 
-Le fichier `german.data` est un fichier texte séparé par des espaces, sans en-tête. Le jeu de données contient 1 000 dossiers de crédit décrits par 20 attributs.
+### Interactive
 
-- Cible recodée: `Y = 1` pour un défaut de paiement, `Y = 0` sinon.
-- Attribut sensible genre: extrait de `personal_status_sex`.
-- Attribut sensible âge: binarisé avec un seuil à 25 ans.
+Open `responsiveAI-german-credit_rendu.ipynb` in Jupyter and run cells in order.
 
-Le traitement du notebook suit une logique simple:
+### Automated (papermill)
 
-1. charger et nettoyer les données;
-2. explorer les biais initiaux sur le genre et l'âge;
-3. retirer les attributs sensibles du jeu d'entraînement de base;
-4. prétraiter avec `StandardScaler` pour le numérique et `OneHotEncoder(handle_unknown="ignore")` pour le catégoriel;
-5. entraîner une régression logistique;
-6. choisir un seuil sur la validation;
-7. mesurer performance et équité;
-8. appliquer le reweighing;
-9. appliquer un post-processing par seuils de groupe et `fairlearn`;
-10. expliquer le modèle avec SHAP et l'importance par permutation;
-11. quantifier l'incertitude avec bootstrap.
-
-## Formules clés
-
-### Notation
-
-| Symbole | Sens |
-|---|---|
-| `x_i` | vecteur d'attributs de l'exemple `i` |
-| `y_i` | label vrai, avec `1 = défaut` et `0 = bon payeur` |
-| `S` | attribut sensible |
-| `\hat Y` | prédiction binaire après seuillage |
-| `p_i` | probabilité prédite de défaut |
-| `\tau` | seuil de décision |
-| `TP, FP, TN, FN` | éléments de la matrice de confusion |
-
-### Régression logistique
-
-La régression logistique transforme un score linéaire en probabilité:
-
-$$
-p_i = \sigma(w^\top x_i + b),
-\qquad
-\sigma(z) = \frac{1}{1 + e^{-z}}
-$$
-
-La perte minimisée dans le notebook est une entropie croisée binaire pondérée avec régularisation L2:
-
-$$
-\mathcal{L}
-=
--\frac{1}{n}\sum_{i=1}^{n} s_i \Big[y_i \ln p_i + (1-y_i)\ln(1-p_i)\Big]
-+
-\frac{1}{2C}\|w\|^2
-$$
-
-- `s_i` est le poids de l'exemple, égal à `1` sur le baseline et remplacé par les poids de reweighing lors de la mitigation;
-- `C` est l'inverse de la régularisation L2;
-- `p_i` est la probabilité prédite de défaut.
-
-### Seuil et performance
-
-La décision binaire est obtenue par seuillage:
-
-$$
-\hat y_i = \mathbf{1}[p_i \ge \tau]
-$$
-
-Le seuil n'est pas fixé à `0.5`. Il est balayé sur la validation et choisi pour maximiser la balanced accuracy:
-
-$$
-\text{BalAcc}
-=
-\frac{1}{2}(\text{TPR}+\text{TNR})
-=
-\frac{1}{2}\left(\frac{TP}{TP+FN}+\frac{TN}{TN+FP}\right)
-$$
-
-Le rapport suit aussi le coût métier:
-
-$$
-\text{Coût} = 5\,FN + 1\,FP
-$$
-
-Le jeu de données UCI pénalise plus fortement les faux négatifs, car approuver un mauvais crédit est plus coûteux que refuser un bon dossier.
-
-### Métriques d'équité
-
-Les deux métriques centrales du notebook sont:
-
-$$
-|\Delta \text{DP}|
-=
-\left|P(\hat Y=1 \mid S=0) - P(\hat Y=1 \mid S=1)\right|
-$$
-
-$$
-|\Delta \text{EO}|
-=
-\left|\text{TPR}_{S=0} - \text{TPR}_{S=1}\right|
-$$
-
-On suit aussi le disparate impact comme un ratio de taux de sélection entre un groupe comparé et un groupe de référence:
-
-$$
-\text{DI}
-=
-\frac{P(\hat Y=1 \mid S=\text{groupe comparé})}{P(\hat Y=1 \mid S=\text{groupe de référence})}
-$$
-
-Le repère usuel est `0.8` pour le 80% rule. La convention exacte dépend du choix du groupe de référence, donc il faut lire ce ratio avec le sens utilisé dans le rapport.
-
-### Reweighing
-
-Le reweighing corrige la distribution d'entraînement en donnant plus de poids aux combinaisons `(groupe, label)` sous-représentées:
-
-$$
-w_i = \frac{P(S=s_i)\,P(Y=y_i)}{P(S=s_i, Y=y_i)}
-$$
-
-L'idée est de rapprocher `S` et `Y` d'une indépendance dans la distribution pondérée, sans changer la structure du modèle. Dans le notebook, ces poids sont passés à l'entraînement via `sample_weight`.
-
-### Post-processing par groupe
-
-Le post-processing utilise un seuil spécifique à chaque groupe sensible:
-
-$$
-\hat y_i = \mathbf{1}[p_i \ge \tau_{S_i}]
-$$
-
-Cette stratégie vise surtout la Demographic Parity. Le notebook compare une heuristique maison et la version officielle de `fairlearn` (`ThresholdOptimizer`) pour DP, EO et equalized odds. Sur un petit jeu de validation, cette approche peut surajuster.
-
-### SHAP et permutation importance
-
-Pour une régression logistique, les SHAP exacts s'écrivent:
-
-$$
-\phi_i(x)
-=
-w_i \cdot \left(x_i - \mathbb{E}_{train}[x_i]\right)
-$$
-
-La contribution est positive si la feature pousse vers le défaut, négative sinon. Pour les variables catégorielles encodées en one-hot, les contributions des dummies sont agrégées par feature d'origine.
-
-L'importance par permutation mesure la chute d'AUC quand on mélange une colonne:
-
-$$
-\text{Imp}(j)
-=
-\frac{1}{R}\sum_{r=1}^{R}
-\left(AUC_{orig} - AUC_{shuffled(j,r)}\right)
-$$
-
-Le notebook répète la permutation 10 fois par feature pour stabiliser l'estimation.
-
-### Bootstrap et incertitude
-
-Le rapport remplace la robustesse adversariale par une quantification d'incertitude par bootstrap. On tire `B = 200` rééchantillonnages avec remise et on calcule des intervalles de confiance par quantiles:
-
-$$
-\text{IC}_{95\%} = [q_{0.025}, q_{0.975}]
-$$
-
-Cela donne une lecture plus prudente des écarts d'équité observés sur seulement 200 exemples de test.
-
-## Résultats marquants
-
-- L'axe le plus sensible dans le rapport est l'âge, pas le genre.
-- Sur la version actuellement documentée, le genre devient peu problématique après retrait de `personal_status_sex` (`|\Delta DP| \approx 0.010`).
-- L'âge montre un vrai compromis entre DP et EO: le post-processing réduit `|\Delta DP|` mais augmente `|\Delta EO|`.
-- Le rapport illustre ce compromis avec `|\Delta DP| \approx 0.125` avant mitigation sur l'âge, puis `\approx 0.060` après post-processing, tandis que `|\Delta EO|` passe d'environ `0.066` à `0.135`.
-- Les SHAP et la permutation importance pointent les mêmes variables dominantes: `checking_status`, `duration_in_month`, `credit_amount`, `credit_history`, `savings_account_bonds`.
-- Les intervalles bootstrap restent larges; il faut donc éviter de surinterpréter de petits écarts d'équité.
-
-## Installation et exécution
-
-Le plus simple est de partir du dépôt racine, de créer un environnement virtuel puis d'installer les dépendances du notebook:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\activate
-python -m pip install -r julien/requirements.txt
+```bash
+papermill responsiveAI-german-credit_rendu.ipynb responsiveAI-german-credit_rendu.ipynb
 ```
 
-Ensuite, lancez Jupyter depuis la racine du dépôt et ouvrez `julien/responsiveAI-german-credit_light.ipynb`. Le notebook s'attend à trouver `data/raw/german.data` par rapport à la racine du dépôt.
+In-place execution: outputs are saved back into the source notebook. `random_state = 42` is fixed everywhere, so the run is deterministic.
 
-Le rapport est déjà disponible en PDF. La source LaTeX et le script de compilation sont conservés dans `julien/` pour régénérer le document si nécessaire.
+Notebook execution generates an `outputs/` folder containing all figures (`00_convergence.png` through `19_bootstrap_triple.png`).
 
-## Références utiles
+## Recompiling the report
 
-- UCI Machine Learning Repository, German Credit Data.
-- Kamiran & Calders, reweighing pour la classification sans discrimination.
-- Hardt et al., Equal Opportunity et post-processing par seuils.
-- Lundberg & Lee, SHAP.
-- Chouldechova et Kleinberg, théorème d'impossibilité entre fairness, calibration et contraintes de taux.
+```bash
+bash responsiveAI-german-credit_rapport_compile.sh
+```
+
+This calls `pdflatex` twice (for table of contents and references). The script auto-detects `pdflatex` or `xelatex`. The `.tex` source references figures from `outputs/`, so the notebook should be executed first if the figures need to be regenerated.
+
+## Notebook structure
+
+1. Loading and label translation: UCI `Axx` codes mapped to French labels
+2. Exploration and sensitive attributes: distributions, default rates per group (age threshold = 25 years)
+   - 2.1 Proxy detection (univariate correlation `|r| > 0.15`, multivariate AUC features → sensitive attribute)
+3. Data preparation: `ColumnTransformer`, 60 / 20 / 20 stratified split
+4. Baseline model: L2 logistic regression, convergence check, comparison to trivial baselines
+   - 4.1 Performance visualizations
+   - 4.2 Business cost (UCI matrix)
+5. Performance and fairness metrics: AUC, BalAcc, |DP|, |EO|, Disparate Impact (via fairlearn)
+   - 5.1 Intersectional audit
+6. Pre-processing mitigation: reweighing $w_i = P(S) \cdot P(Y) / P(S, Y)$
+7. Post-processing mitigation: per-group thresholds (custom + `fairlearn ThresholdOptimizer`)
+8. Comparison: 4 configurations × 3 variants, impossibility theorem
+9. Interpretability: SHAP global, SHAP local, comparison with/without sensitive attributes, proxy detection
+10. Uncertainty quantification: bootstrap B = 500 + B = 100 on three variants, individual prediction intervals
+11. Synthesis and conclusion: methodological reproducibility, decision pathway, recommendations
+12. References
+
+## Methodological reproducibility
+
+Beyond the specific numbers, the project provides a transferable canvas applicable to any binary classification with sensitive attributes (insurance scoring, hiring, social aid allocation, predictive justice, health scoring): identify sensitive attributes, audit the baseline, detect proxies, compare V1/V2/V3, evaluate classical mitigations, interpret globally and locally, quantify uncertainty, summarize and choose a motivated decision pathway.
+
+## Main result
+
+Removing both sensitive attributes and the 17 univariate proxies (`|r| > 0.15`) produces a model that is simultaneously more performant (AUC +0.005), more equitable per attribute (DP age divided by 3, DI age above the EEOC 80 % threshold), and more statistically stable (tightest bootstrap CI). On this dataset, upstream proxy removal is more effective than in/post-model interventions; on other datasets, V3 might cost performance or fail to improve fairness — the transferable lesson is to always compare V1/V2/V3 explicitly rather than assume the effect of a removal a priori.
