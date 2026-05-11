@@ -13,7 +13,18 @@
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage{tikz}
-\usepackage[hidelinks]{hyperref}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!60!black,
+    urlcolor=blue!50!black,
+    citecolor=blue!50!black,
+    linktoc=all,
+    bookmarks=true,
+    bookmarksnumbered=true,
+    pdftitle={IA Responsable, German Credit Dataset},
+    pdfauthor={Gimenez, Fanchini, Cintra, Zhang, Hamadeh}
+}
 \usepackage{tcolorbox}
 \tcbuselibrary{skins, breakable}
 
@@ -544,7 +555,7 @@ Sur l'AUC, les 3 distributions se recouvrent : retirer les attributs sensibles p
 
 \subsection{Reproductibilité méthodologique}
 
-Le but de cette section n'est pas de décrire comment ré-exécuter ce notebook --- la commande tient en une ligne et \texttt{random\_state} est fixé partout --- mais de montrer que le canevas suivi est transférable à n'importe quel projet de classification binaire avec attributs sensibles. La démarche est conçue pour qu'un praticien puisse la réappliquer à un cas d'usage différent (scoring assurance, recrutement, allocation d'aides sociales, justice prédictive, scoring santé) en remplaçant essentiellement le dataset et la définition des attributs sensibles, sans avoir à réinventer la structure de l'audit.
+Le but de cette section est de montrer que le canevas suivi est transférable à n'importe quel projet de classification binaire avec attributs sensibles. La démarche est conçue pour qu'un praticien puisse la réappliquer à un cas d'usage différent (scoring assurance, recrutement, allocation d'aides sociales, justice prédictive, scoring santé) en remplaçant essentiellement le dataset et la définition des attributs sensibles, sans avoir à réinventer la structure de l'audit.
 
 Le canevas en 8 étapes : (i) identification des attributs sensibles et préparation des splits stratifiés ; (ii) audit du baseline en performance, équité par attribut et intersectionnel ; (iii) détection des proxies par corrélation univariée et régression multivariée features $\to$ attribut sensible ; (iv) comparaison de trois variantes V1 (avec sensibles), V2 (sans), V3 (sans + proxies) ; (v) évaluation des méthodes d'atténuation classiques (pré-traitement par reweighing, post-traitement par seuils par groupe) ; (vi) interprétabilité globale et locale ; (vii) quantification d'incertitude par bootstrap au niveau global et individuel ; (viii) synthèse et parcours décisionnel motivé.
 
@@ -554,7 +565,7 @@ La conclusion principale du projet --- V3 améliore simultanément performance e
 
 \subsection{Bilan des résultats}
 
-\paragraph{Performance.} Le baseline V2 (régression logistique L2) atteint sur le test AUC = 0.785, balanced accuracy = 0.669 et average precision = 0.607, avec une convergence en 6 itérations. La matrice de coûts asymétrique documentée par UCI ($5 \cdot \text{FN} + 1 \cdot \text{FP}$) ancre le choix du seuil de classification dans la réalité bancaire.
+\paragraph{Performance.} Le baseline V2 (régression logistique L2) atteint sur le test AUC = 0.785, balanced accuracy = 0.669 et average précision = 0.607, avec une convergence en 6 itérations. La matrice de coûts asymétrique documentée par UCI ($5 \cdot \text{FN} + 1 \cdot \text{FP}$) ancre le choix du seuil de classification dans la réalité bancaire.
 
 \paragraph{Équité par attribut isolé.} Sur le genre, le biais est quasi nul après retrait de \texttt{personal\_status\_sex} ($|\Delta\text{DP}| = 0.010$, DI = 0.97). Sur l'âge, en revanche, le biais persiste : $|\Delta\text{DP}| = 0.125$ et DI = 0.69, soit sous le seuil légal US 0.8. L'audit intersectionnel multiplie ce biais par environ 1.5 ($|\Delta\text{DP}| = 0.181$, DI = 0.59), avec les jeunes hommes (n = 19) comme sous-groupe le plus défavorisé, contre-intuitivement.
 
